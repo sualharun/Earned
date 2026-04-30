@@ -42,7 +42,7 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
         }
     }
 
-    val score = state.attentionScore
+    val score = (state.attentionScore * 100f).coerceIn(0f, 100f)
     val minutes = state.remainingSeconds / 60
     val seconds = state.remainingSeconds % 60
     val totalDuration = state.initialDurationSeconds.coerceAtLeast(state.remainingSeconds)

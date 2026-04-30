@@ -32,6 +32,7 @@ import com.focusguard.ui.theme.FocusGuardTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SessionManager.initialize(applicationContext)
         enableEdgeToEdge()
         setContent {
             FocusGuardTheme {
@@ -118,7 +119,7 @@ class MainActivity : ComponentActivity() {
                                     val sessionState = SessionManager.stateFlow.value
                                     EarnedItStore.recordSession(
                                         durationSeconds = sessionState.initialDurationSeconds,
-                                        focusScore = sessionState.attentionScore,
+                                        focusScore = sessionState.attentionScore * 100f,
                                         distractionCount = sessionState.distractionCount,
                                         endedEarly = endedEarly
                                     )

@@ -1,20 +1,52 @@
 package com.focusguard.ml
 
-/**
- * Camera → FaceDetector → HeadPose/EyeOpen → AttentionSignal.
- * Person 1 (Gabe) implements start/stop with CameraX.
- * Person 2 (Rayan) wires HeadPoseEstimator + EyeOpenEstimator.
- *
- * For now, the UI uses a dummy emitter in SessionManager.
- */
-class MLPipeline {
+import android.graphics.Bitmap
+
+// Person 1: Orchestrates face detection, head pose, and eye openness models
+class MLPipeline(
+    private val faceDetector: FaceDetector = FaceDetector(),
+    private val headPoseEstimator: HeadPoseEstimator = HeadPoseEstimator(),
+    private val eyeOpenEstimator: EyeOpenEstimator = EyeOpenEstimator()
+) {
     var onAttentionSignal: ((AttentionSignal) -> Unit)? = null
+    var isRunning: Boolean = false
+        private set
 
     fun start() {
-        // Person 1 implements: CameraX + FaceDetector → FaceCrop → Person 2 models → signal
+        isRunning = true
     }
 
     fun stop() {
-        // Person 1 implements: release camera + model resources
+        isRunning = false
+    }
+
+    fun processFrame(frameBitmap: Bitmap): AttentionSignal {
+        val signal = when (val result = faceDetector.detect(frameBitmap)) {
+            is FaceDetectionResult.Detected -> {
+                val pose = headPoseEstimator.estimate(result.faceCrop)
+                val eyes = eyeOpenEstimator.estimate(result.faceCrop)
+
+                AttentionSignal(
+                    faceDetected = result.faceCrop.confidence >= FACE_CONFIDENCE_THRESHOLD,
+                    yaw = pose.yaw,
+                    pitch = pose.pitch,
+                    roll = pose.roll,
+                    eyeAspectRatio = eyes.eyeAspectRatio
+                )
+            }
+
+            FaceDetectionResult.NoFace -> AttentionSignal(faceDetected = false)
+        }
+
+        onAttentionSignal?.invoke(signal)
+        return signal
+    }
+
+    fun submitAttentionSignal(signal: AttentionSignal) {
+        onAttentionSignal?.invoke(signal)
+    }
+
+    companion object {
+        const val FACE_CONFIDENCE_THRESHOLD = 0.7f
     }
 }

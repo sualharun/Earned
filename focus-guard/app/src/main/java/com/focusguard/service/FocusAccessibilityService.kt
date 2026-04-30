@@ -1,42 +1,78 @@
 package com.focusguard.service
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import com.focusguard.session.SessionManager
 
-/**
- * Person 3 (Sanjiv) owns this file.
- * Monitors foreground app changes and bounces blacklisted apps during active sessions.
- */
+// Person 3: Accessibility service for app blocking and focus enforcement
 class FocusAccessibilityService : AccessibilityService() {
+    private var lastBlockedPackage: String? = null
+    private var lastBlockElapsedMs: Long = 0L
 
     override fun onServiceConnected() {
-        serviceInfo = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            notificationTimeout = 100
-        }
+        super.onServiceConnected()
+        SessionManager.initialize(applicationContext)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (event == null || event.eventType !in MONITORED_EVENT_TYPES) return
 
-        val pkg = event.packageName?.toString() ?: return
-        val state = SessionManager.stateFlow.value
+        val foregroundPackage = event.packageName?.toString() ?: return
+        if (foregroundPackage.isBlank() || shouldIgnorePackage(foregroundPackage)) return
+        if (SessionManager.isRewardWindowActive()) return
+        if (!SessionManager.isPackageBlocked(foregroundPackage)) return
+        if (isDuplicateBlock(foregroundPackage)) return
 
-        if (!state.isActive) return
-        if (pkg == "com.android.dialer") return // always allow emergency calls
-        if (pkg == packageName) return // don't block ourselves
-
-        if (pkg in state.blacklistedApps) {
-            SessionManager.onBlockedAppOpened(pkg)
-            val intent = packageManager.getLaunchIntentForPackage(packageName)
-            intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            startActivity(intent)
-        }
+        SessionManager.onBlockedAppOpened(foregroundPackage)
+        launchFocusGuard(foregroundPackage)
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() = Unit
+
+    private fun shouldIgnorePackage(packageName: String): Boolean {
+        return packageName == this.packageName ||
+            packageName in IGNORED_PACKAGES
+    }
+
+    private fun isDuplicateBlock(packageName: String): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        val isDuplicate = packageName == lastBlockedPackage &&
+            now - lastBlockElapsedMs < BLOCK_DEBOUNCE_MS
+
+        if (!isDuplicate) {
+            lastBlockedPackage = packageName
+            lastBlockElapsedMs = now
+        }
+        return isDuplicate
+    }
+
+    private fun launchFocusGuard(blockedPackageName: String) {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return
+        launchIntent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+        )
+        launchIntent.putExtra(EXTRA_BLOCKED_PACKAGE_NAME, blockedPackageName)
+        startActivity(launchIntent)
+    }
+
+    companion object {
+        const val EXTRA_BLOCKED_PACKAGE_NAME = "com.focusguard.extra.BLOCKED_PACKAGE_NAME"
+        private const val BLOCK_DEBOUNCE_MS = 1_500L
+
+        private val MONITORED_EVENT_TYPES = setOf(
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED
+        )
+
+        private val IGNORED_PACKAGES = setOf(
+            "android",
+            "com.android.settings",
+            "com.android.systemui",
+            SessionManager.EMERGENCY_DIALER_PACKAGE
+        )
+    }
 }

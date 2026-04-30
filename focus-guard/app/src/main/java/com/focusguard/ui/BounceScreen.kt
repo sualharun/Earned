@@ -40,7 +40,7 @@ fun BounceScreen(onDismiss: () -> Unit) {
 
     val minutes = state.remainingSeconds / 60
     val seconds = state.remainingSeconds % 60
-    val score = state.attentionScore.toInt()
+    val score = (state.attentionScore * 100f).toInt()
 
     Column(
         modifier = Modifier

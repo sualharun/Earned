@@ -2,8 +2,8 @@ package com.focusguard.ml
 
 data class AttentionSignal(
     val faceDetected: Boolean,
-    val yaw: Float,            // degrees, negative=left, positive=right
-    val pitch: Float,          // degrees, negative=down, positive=up
-    val roll: Float,           // degrees, head tilt
-    val eyeAspectRatio: Float  // 0.0 (closed) to ~0.4 (wide open)
+    val yaw: Float = 0f,
+    val pitch: Float = 0f,
+    val roll: Float = 0f,
+    val eyeAspectRatio: Float = 0f
 )

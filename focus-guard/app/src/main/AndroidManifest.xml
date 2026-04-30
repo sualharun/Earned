@@ -22,7 +22,8 @@
 
         <service
             android:name=".service.FocusAccessibilityService"
-            android:exported="false"
+            android:exported="true"
+            android:label="EarnedIt App Blocking"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

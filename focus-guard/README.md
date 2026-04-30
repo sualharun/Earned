@@ -41,3 +41,7 @@ focus-guard/
 | Session management & attention scoring | Person 2 |
 | Accessibility service (app blocking) | Person 3 |
 | UI screens (Home, Session, Bounce) | Person 4 |
+
+## QA
+
+- [Accessibility Service manual QA checklist](docs/accessibility-service-qa.md)
