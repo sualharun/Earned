@@ -18,7 +18,6 @@ import androidx.navigation.compose.rememberNavController
 import com.focusguard.session.SessionManager
 import com.focusguard.state.EarnedItStore
 import com.focusguard.ui.BounceScreen
-import com.focusguard.ui.CoachScreen
 import com.focusguard.ui.EarnedBottomNav
 import com.focusguard.ui.HomeScreen
 import com.focusguard.ui.InsightsScreen
@@ -45,7 +44,7 @@ class MainActivity : ComponentActivity() {
                 val uiState by EarnedItStore.state.collectAsState()
                 val backStack by navController.currentBackStackEntryAsState()
                 val currentRoute = backStack?.destination?.route
-                val tabRoutes = setOf("home", "insights", "social", "coach", "more")
+                val tabRoutes = setOf("home", "insights", "social", "more")
 
                 // Navigate to bounce screen when a blocked app is detected
                 LaunchedEffect(state.blockedPackageName) {
@@ -104,9 +103,6 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("social") {
                             SocialScreen()
-                        }
-                        composable("coach") {
-                            CoachScreen()
                         }
                         composable("more") {
                             MoreScreen(onOpen = { label ->
