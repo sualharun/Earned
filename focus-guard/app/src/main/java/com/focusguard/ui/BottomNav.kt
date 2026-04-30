@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Icon
@@ -31,6 +32,7 @@ data class BottomTab(
 val EarnedBottomTabs = listOf(
     BottomTab("home", "Home", Icons.Filled.Home),
     BottomTab("insights", "Insights", Icons.Filled.BarChart),
+    BottomTab("social", "Social", Icons.Filled.Groups),
     BottomTab("coach", "Coach", Icons.Filled.ChatBubble),
     BottomTab("more", "More", Icons.Filled.MoreHoriz)
 )

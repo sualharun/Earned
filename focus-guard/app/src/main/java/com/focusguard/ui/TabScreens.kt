@@ -1,6 +1,7 @@
 package com.focusguard.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -34,12 +35,14 @@ import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -58,11 +61,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.focusguard.R
 import com.focusguard.state.EarnedItStore
+import com.focusguard.state.PetProfile
 import com.focusguard.ui.theme.EarnedColors
 
 @Composable
@@ -101,44 +108,31 @@ fun InsightsScreen(onOpenDetail: (String) -> Unit) {
 
 @Composable
 fun SocialScreen() {
-    var code by remember { mutableStateOf("") }
+    val friends = remember {
+        listOf(
+            SocialFriend("Sual", "lumi", 5, 12840, 6, "+520", "2h 15m"),
+            SocialFriend("Sanjiv", "kitsu", 4, 11620, 7, "+460", "1h 55m"),
+            SocialFriend("Gabe", "owly", 5, 9480, 4, "+310", "1h 35m"),
+            SocialFriend("Rayan", "kitsu", 3, 8770, 5, "+280", "1h 20m"),
+            SocialFriend("Maya", "lumi", 3, 7640, 3, "+190", "58m"),
+            SocialFriend("Leo", "owly", 2, 6920, 2, "+140", "42m")
+        )
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item { ScreenTitle("Study Rooms", "Focus with friends in real time.") }
+        item { SocialHeader() }
+        item { SocialPodiumCard() }
         item {
-            Button(
-                onClick = {},
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = EarnedColors.Primary, contentColor = Color.White)
-            ) {
-                Icon(Icons.Filled.GroupAdd, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Create a room", fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SocialStatCard("Your rank", "#2", Icons.Filled.EmojiEvents, EarnedColors.Points, Modifier.weight(1f))
+                SocialStatCard("Friend avg", "8,545", Icons.Filled.Star, EarnedColors.Focus, Modifier.weight(1f))
             }
         }
-        item {
-            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Join with code", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = code,
-                            onValueChange = { code = it.uppercase().take(6) },
-                            singleLine = true,
-                            placeholder = { Text("ABC123") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        Button(onClick = {}, shape = RoundedCornerShape(12.dp)) { Text("Join") }
-                    }
-                }
-            }
-        }
-        item { EmptyPanel(Icons.Filled.QrCode, "No active rooms", "Create a room when you are ready to wire live sync.") }
+        item { FriendRankingCard(friends) }
     }
 }
 
@@ -266,7 +260,274 @@ fun FeatureScreen(title: String) {
     }
 }
 
+private data class SocialFriend(
+    val username: String,
+    val species: String,
+    val stage: Int,
+    val points: Int,
+    val streakDays: Int,
+    val delta: String,
+    val focusTime: String
+) {
+    val pet: PetProfile
+        get() = PetProfile(
+            name = username,
+            species = species,
+            stage = stage,
+            fullness = 86,
+            mood = "Focused"
+        )
+}
+
 private data class MoreItem(val label: String, val hint: String, val icon: ImageVector)
+
+@Composable
+private fun SocialHeader() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(
+                "Social",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                "Your friends, your focus crew.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(
+                onClick = {},
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 1.dp,
+                modifier = Modifier.size(42.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.GroupAdd,
+                        contentDescription = "Add friend",
+                        tint = EarnedColors.LightForeground,
+                        modifier = Modifier.size(21.dp)
+                    )
+                }
+            }
+            Surface(
+                onClick = {},
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 1.dp,
+                modifier = Modifier.size(42.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.Settings,
+                        contentDescription = "Social settings",
+                        tint = EarnedColors.LightForeground,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SocialPodiumCard() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 2.dp
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.social_podium_garden),
+            contentDescription = "Top friends podium garden",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(238.dp),
+            contentScale = ContentScale.FillBounds
+        )
+    }
+}
+
+@Composable
+private fun SocialStatCard(
+    label: String,
+    value: String,
+    icon: ImageVector,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(shape = CircleShape, color = tint.copy(alpha = 0.14f), modifier = Modifier.size(38.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+                }
+            }
+            Column {
+                Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FriendRankingCard(friends: List<SocialFriend>) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 1.dp
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "FRIEND RANKING",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "THIS WEEK",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 9.sp
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+            friends.forEachIndexed { index, friend ->
+                LeaderboardRow(rank = index + 1, friend = friend)
+                if (index != friends.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 92.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LeaderboardRow(rank: Int, friend: SocialFriend) {
+    val rankColor = when (rank) {
+        1 -> EarnedColors.Points
+        2 -> EarnedColors.Secondary
+        3 -> EarnedColors.Focus
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (rank == 1) EarnedColors.Points.copy(alpha = 0.045f) else Color.Transparent
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            rank.toString(),
+            modifier = Modifier.width(22.dp),
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            color = rankColor,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.width(10.dp))
+        FriendPetAvatar(friend = friend, tint = rankColor)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(friend.username, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Spacer(Modifier.width(7.dp))
+                Surface(shape = RoundedCornerShape(8.dp), color = EarnedColors.Warning.copy(alpha = 0.12f)) {
+                    Text(
+                        "${friend.streakDays}d",
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = EarnedColors.Warning
+                    )
+                }
+            }
+            Text(
+                friend.focusTime,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp
+            )
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Star,
+                    contentDescription = null,
+                    tint = EarnedColors.Points,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "%,d pts".format(friend.points),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Text(
+                friend.delta,
+                color = EarnedColors.Focus,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun FriendPetAvatar(friend: SocialFriend, tint: Color) {
+    val background = when (friend.species) {
+        "kitsu" -> EarnedColors.Primary.copy(alpha = 0.12f)
+        "lumi" -> EarnedColors.Focus.copy(alpha = 0.13f)
+        "owly" -> EarnedColors.Secondary.copy(alpha = 0.12f)
+        else -> tint.copy(alpha = 0.12f)
+    }
+
+    Surface(
+        shape = CircleShape,
+        color = background,
+        modifier = Modifier.size(54.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            PetSprite(
+                pet = friend.pet,
+                size = 52.dp,
+                glow = false
+            )
+        }
+    }
+}
 
 @Composable
 private fun ScreenTitle(title: String, subtitle: String) {

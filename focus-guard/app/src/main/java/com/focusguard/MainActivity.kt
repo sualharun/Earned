@@ -8,6 +8,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.NavHost
@@ -18,14 +20,15 @@ import com.focusguard.state.EarnedItStore
 import com.focusguard.ui.BounceScreen
 import com.focusguard.ui.CoachScreen
 import com.focusguard.ui.EarnedBottomNav
-import com.focusguard.ui.FeatureScreen
 import com.focusguard.ui.HomeScreen
 import com.focusguard.ui.InsightsScreen
+import com.focusguard.ui.MoreFeatureScreen
+import com.focusguard.ui.MorePetDetailScreen
 import com.focusguard.ui.MoreScreen
 import com.focusguard.ui.OnboardingScreen
-import com.focusguard.ui.PetDetailScreen
 import com.focusguard.ui.ResultsScreen
 import com.focusguard.ui.SessionScreen
+import com.focusguard.ui.SocialScreen
 import com.focusguard.ui.SetupScreen
 import com.focusguard.ui.theme.FocusGuardTheme
 
@@ -33,6 +36,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         SessionManager.initialize(applicationContext)
+        EarnedItStore.initialize(applicationContext)
         enableEdgeToEdge()
         setContent {
             FocusGuardTheme {
@@ -41,7 +45,7 @@ class MainActivity : ComponentActivity() {
                 val uiState by EarnedItStore.state.collectAsState()
                 val backStack by navController.currentBackStackEntryAsState()
                 val currentRoute = backStack?.destination?.route
-                val tabRoutes = setOf("home", "insights", "coach", "more")
+                val tabRoutes = setOf("home", "insights", "social", "coach", "more")
 
                 // Navigate to bounce screen when a blocked app is detected
                 LaunchedEffect(state.blockedPackageName) {
@@ -52,6 +56,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                if (!uiState.loaded) {
+                    Box(modifier = Modifier.fillMaxSize())
+                } else {
                 Scaffold(
                     containerColor = Color.Transparent,
                     bottomBar = {
@@ -88,6 +95,9 @@ class MainActivity : ComponentActivity() {
                         composable("insights") {
                             InsightsScreen(onOpenDetail = { navController.navigate("feature/$it") })
                         }
+                        composable("social") {
+                            SocialScreen()
+                        }
                         composable("coach") {
                             CoachScreen()
                         }
@@ -98,10 +108,13 @@ class MainActivity : ComponentActivity() {
                             })
                         }
                         composable("pet") {
-                            PetDetailScreen()
+                            MorePetDetailScreen(onBack = { navController.popBackStack() })
                         }
                         composable("feature/{title}") { entry ->
-                            FeatureScreen(title = entry.arguments?.getString("title") ?: "EarnedIt")
+                            MoreFeatureScreen(
+                                title = entry.arguments?.getString("title") ?: "EarnedIt",
+                                onBack = { navController.popBackStack() }
+                            )
                         }
                         composable("setup") {
                             SetupScreen(
@@ -146,6 +159,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                }
                 }
             }
         }
