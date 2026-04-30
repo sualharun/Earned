@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Spa
 import androidx.compose.material.icons.filled.Star
@@ -31,6 +32,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,7 +51,7 @@ import com.focusguard.state.FocusSessionSummary
 import com.focusguard.ui.theme.EarnedColors
 
 @Composable
-fun HomeScreen(onStartSession: () -> Unit) {
+fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
     val uiState by EarnedItStore.state.collectAsState()
 
     LazyColumn(
@@ -96,6 +98,18 @@ fun HomeScreen(onStartSession: () -> Unit) {
         }
 
         item { NpuStatusCard() }
+
+        item {
+            OutlinedButton(
+                onClick = onReplayOnboarding,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Replay onboarding")
+            }
+        }
 
         item {
             Surface(

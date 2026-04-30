@@ -89,7 +89,14 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("home") {
                             HomeScreen(
-                                onStartSession = { navController.navigate("setup") }
+                                onStartSession = { navController.navigate("setup") },
+                                onReplayOnboarding = {
+                                    EarnedItStore.replayOnboardingForPreview()
+                                    navController.navigate("onboarding") {
+                                        popUpTo("home") { inclusive = false }
+                                        launchSingleTop = true
+                                    }
+                                }
                             )
                         }
                         composable("insights") {

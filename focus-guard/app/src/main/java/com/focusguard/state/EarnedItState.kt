@@ -202,6 +202,10 @@ object EarnedItStore {
         mutate { it.copy(onboardingComplete = true).withPrivacyEvent("settings", "Onboarding complete", "Initial local profile created.") }
     }
 
+    fun replayOnboardingForPreview() {
+        mutate { it.copy(onboardingComplete = false).withPrivacyEvent("settings", "Onboarding replay", "Temporary preview flow reopened from Home.") }
+    }
+
     fun pickPet(species: String, name: String) {
         mutate { state ->
             state.copy(
