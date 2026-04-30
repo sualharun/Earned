@@ -1,92 +1,74 @@
-Here's a thorough summary you can paste:
+# FocusGuard — Project Summary
 
----
-
-**PROJECT: FocusGuard**
-
+## Overview
 An Android app that uses on-device computer vision to track student attention and block distracting apps during study sessions. Built for the Qualcomm x Google LiteRT Hackathon (April 30 - May 1, 2026), running on a Samsung Galaxy S25 Ultra (Snapdragon 8 Elite with Hexagon NPU).
 
 **Core mechanic:** User starts a study session, selects apps to block, and sets a duration. The front camera continuously monitors attention via ML inference. If the user looks away, closes their eyes, or loses face detection, their attention score decays and time is added to the session. If they try to open a blacklisted app, the Accessibility Service bounces them back immediately.
 
 ---
 
-**TECH STACK**
-- Language: Kotlin
-- Camera: CameraX (ImageAnalysis use case, 15fps, YUV→RGB→float tensor)
-- ML Runtime: Google LiteRT CompiledModel API with Accelerator.NPU (Hexagon)
-- Models: BlazeFace (face detection), WHENet (head pose), eye landmark/openness model — all .tflite format from Qualcomm AI Hub
-- App blocking: Android Accessibility Service monitoring TYPE_WINDOW_STATE_CHANGED events
-- State management: StateFlow + Kotlin coroutines
-- Storage: SharedPreferences for blacklisted apps
+## Tech Stack
+- **Language:** Kotlin
+- **Camera:** CameraX (ImageAnalysis use case, 15fps, YUV→RGB→float tensor)
+- **ML Runtime:** Google LiteRT CompiledModel API with Accelerator.NPU (Hexagon)
+- **Models (confirmed from Qualcomm AI Hub):**
+  - `mediapipe_face_detector.tflite` — face detection, bounding boxes + 6 facial landmarks (Person 1)
+  - `mediapipe_face_landmark_detector.tflite` — 3D facial landmarks for eye openness EAR computation (Person 2)
+  - Head pose model TBD — Person 2 to confirm from AI Hub search "head pose"
+- **App blocking:** Android Accessibility Service monitoring TYPE_WINDOW_STATE_CHANGED
+- **State management:** StateFlow + Kotlin coroutines
+- **Storage:** SharedPreferences for blacklisted apps
 
 ---
 
-**ARCHITECTURE**
+## Model Decisions
+
+### Face Detection: MediaPipe-Face-Detection (replaces BlazeFace)
+BlazeFace is not available on Qualcomm AI Hub. MediaPipe-Face-Detection is the confirmed replacement:
+- Explicitly supports Samsung Galaxy S25 Ultra and Snapdragon 8 Elite Mobile NPU
+- Ships as two .tflite files: face_detector and face_landmark_detector
+- Input resolution: 256x256
+- Outputs bounding boxes + 6 facial landmarks (left eye, right eye, nose tip, mouth, left/right eye tragion)
+- Sub-millisecond processing
+- Apache 2.0 license
+- Source: https://aihub.qualcomm.com/models/mediapipe_face
+
+### Eye Openness
+Derived from face_landmark_detector output. Compute Eye Aspect Ratio (EAR = eye height / eye width) from landmark positions. No separate eye model needed. EAR < 0.2 = eyes closed.
+
+### Head Pose
+Person 2 to confirm. Search "head pose" on aihub.qualcomm.com. WHENet is preferred if available. Fallback: derive pose from 3D facial landmarks if a dedicated model is unavailable.
+
+---
+
+## Architecture
 
 ```
-CameraX (front camera)
-    ↓ raw frame (YUV→RGB bitmap)
-Person 1: FaceDetector (BlazeFace via LiteRT NPU)
+CameraX (front camera, 15fps)
+    ↓ YUV_420_888 → RGB Bitmap → normalized float tensor
+Person 1: FaceDetector (mediapipe_face_detector.tflite via LiteRT NPU)
     ↓ FaceCrop(bitmap, confidence)
-Person 2: HeadPoseEstimator (WHENet) + EyeOpenEstimator
+Person 2: HeadPoseEstimator (head pose .tflite) → yaw, pitch, roll
+          EyeOpenEstimator (mediapipe_face_landmark_detector.tflite) → EAR
     ↓ AttentionSignal(faceDetected, yaw, pitch, roll, eyeAspectRatio)
 Person 3: AttentionScorer → SessionManager (StateFlow<SessionState>)
-    ↓ SessionState(isActive, remainingSeconds, attentionScore, blacklistedApps)
-Person 3: AccessibilityService (monitors foreground app, bounces blacklisted apps)
+    ↓ SessionState(isActive, remainingSeconds, attentionScore, blacklistedApps, blockedPackageName)
+Person 3: FocusAccessibilityService (monitors foreground app, bounces blacklisted apps)
 Person 4: UI (HomeScreen, SessionScreen, BounceScreen) observes StateFlow
 ```
 
 ---
 
-**DIVISION OF LABOR**
-
-**Person 1 — Camera + Face Detection**
-- CameraX setup: ImageAnalysis use case, background executor, 640x480 resolution
-- Frame preprocessing: YUV_420_888 → RGB Bitmap → normalized float tensor [1, H, W, 3]
-- BlazeFace model integration via LiteRT CompiledModel API with NPU acceleration
-- Output: FaceCrop (cropped bitmap of face region + confidence score)
-- Calls Person 2's pipeline with FaceCrop every frame
-- If confidence < 0.7, passes FaceCrop with faceDetected=false signal
-
-**Person 2 — Head Pose + Eye Openness**
-- Takes FaceCrop bitmap from Person 1
-- WHENet integration: resize crop to 224x224, normalize, run inference → yaw, pitch, roll (floats, degrees)
-- Eye model integration: facial landmark model → compute Eye Aspect Ratio (EAR = eye height / eye width). EAR < 0.2 = closed
-- Packages results into AttentionSignal, calls MLPipeline.onAttentionSignal callback
-- Both models run via LiteRT CompiledModel API with Accelerator.NPU
-
-**Person 3 — Accessibility Service + Session Manager**
-- AttentionScorer: consumes AttentionSignal every frame
-  - Focused zone: faceDetected==true AND abs(yaw)<20° AND abs(pitch)<15° AND EAR>0.2
-  - Score: Float 0-100, starts at 100
-  - Focused: score += 0.5 per frame (clamp to 100)
-  - Distracted: score -= 1.5 per frame (clamp to 0)
-  - Every second distracted: add 2 seconds to remaining time
-- SessionManager: singleton exposing StateFlow<SessionState>
-  - start/stop session, countdown timer as coroutine, blacklist CRUD
-- AccessibilityService:
-  - Manifest: accessibilityEventTypes="typeWindowStateChanged"
-  - onAccessibilityEvent: if session active AND foreground package in blacklistedApps AND package != "com.android.dialer" → launch FocusGuard via Intent
-  - Communicates with SessionManager via singleton reference
-
-**Person 4 — UI**
-- HomeScreen: installed app picker (PackageManager), duration selector, Start Session button
-- SessionScreen: attention score (color coded green/yellow/red), countdown timer, distraction reason label, optional camera preview
-- BounceScreen: shown when blocked app intercepted, displays remaining time + score, auto-redirects after 3 seconds
-- All screens observe SessionManager.stateFlow, update reactively
-
----
-
-**SHARED INTERFACES (already defined, push to repo immediately)**
+## Shared Interfaces
 
 ```kotlin
 // ml/AttentionSignal.kt
 data class AttentionSignal(
     val faceDetected: Boolean,
-    val yaw: Float,        // degrees, negative=left, positive=right
-    val pitch: Float,      // degrees, negative=down, positive=up
-    val roll: Float,       // degrees, head tilt
-    val eyeAspectRatio: Float  // 0.0 (closed) to ~0.4 (wide open open)
+    val yaw: Float,            // degrees, negative=left, positive=right
+    val pitch: Float,          // degrees, negative=down, positive=up
+    val roll: Float,           // degrees, head tilt
+    val eyeAspectRatio: Float  // 0.0 (closed) to ~0.4 (wide open)
 )
 
 // ml/FaceCrop.kt
@@ -107,13 +89,24 @@ data class SessionState(
     val isActive: Boolean,
     val remainingSeconds: Int,
     val attentionScore: Float,
-    val blacklistedApps: List<String>  // package names e.g. "com.instagram.android"
+    val blacklistedApps: List<String>,     // package names e.g. "com.instagram.android"
+    val blockedPackageName: String? = null // non-null triggers BounceScreen
 )
 ```
 
 ---
 
-**REPO STRUCTURE**
+## Attention Scoring Logic
+- **Focused zone:** faceDetected == true AND abs(yaw) < 20° AND abs(pitch) < 15° AND EAR > 0.2
+- **Score:** Float 0–100, starts at 100
+  - Focused frame: score += 0.5 (clamp to 100)
+  - Distracted frame: score -= 1.5 (clamp to 0)
+- **Time penalty:** Every second distracted adds 2 seconds to remaining session time
+
+---
+
+## Repo Structure
+
 ```
 focus-guard/
 ├── app/src/main/
@@ -122,40 +115,41 @@ focus-guard/
 │   │   │   ├── AttentionSignal.kt
 │   │   │   ├── FaceCrop.kt
 │   │   │   ├── MLPipeline.kt
-│   │   │   ├── FaceDetector.kt        ← Person 1
-│   │   │   ├── HeadPoseEstimator.kt   ← Person 2
-│   │   │   └── EyeOpenEstimator.kt    ← Person 2
+│   │   │   ├── FaceDetector.kt                      ← Person 1
+│   │   │   ├── HeadPoseEstimator.kt                 ← Person 2
+│   │   │   └── EyeOpenEstimator.kt                  ← Person 2
 │   │   ├── session/
 │   │   │   ├── SessionState.kt
-│   │   │   ├── AttentionScorer.kt     ← Person 3
-│   │   │   └── SessionManager.kt      ← Person 3
+│   │   │   ├── AttentionScorer.kt                   ← Person 3
+│   │   │   └── SessionManager.kt                    ← Person 3
 │   │   ├── service/
-│   │   │   └── FocusAccessibilityService.kt  ← Person 3
+│   │   │   └── FocusAccessibilityService.kt         ← Person 3
 │   │   └── ui/
-│   │       ├── HomeScreen.kt          ← Person 4
-│   │       ├── SessionScreen.kt       ← Person 4
-│   │       └── BounceScreen.kt        ← Person 4
+│   │       ├── HomeScreen.kt                        ← Person 4
+│   │       ├── SessionScreen.kt                     ← Person 4
+│   │       └── BounceScreen.kt                      ← Person 4
 │   └── assets/
-│       ├── blazeface.tflite
-│       ├── whenet.tflite
-│       └── eye_landmark.tflite
+│       ├── mediapipe_face_detector.tflite
+│       ├── mediapipe_face_landmark_detector.tflite
+│       └── head_pose.tflite                         ← Person 2 to confirm filename
 ```
 
 ---
 
-**CRITICAL PATH**
-1. Person 1 gets BlazeFace running on NPU → unblocks Person 2
+## Critical Path
+1. Person 1 gets MediaPipe face detector running on NPU → unblocks Person 2
 2. Person 2 gets AttentionSignal flowing → unblocks Person 3's scorer
 3. Person 3 gets SessionState flowing → unblocks Person 4's UI wiring
-4. Person 3 gets Accessibility Service bouncing apps → testable independently
+4. Person 3 gets Accessibility Service bouncing apps → fully testable independently right now
 
-Person 2, 3, 4 should all use dummy/hardcoded values of AttentionSignal and SessionState until real values are available from upstream.
+Everyone should use dummy/hardcoded AttentionSignal and SessionState values until real upstream values are available.
 
 ---
 
-**KEY CONSTRAINTS**
-- Must use LiteRT CompiledModel API (not old Interpreter API) — judging requirement
-- Must run on S25 Ultra, NPU acceleration required for judging score
+## Key Constraints
+- Must use LiteRT CompiledModel API (not old Interpreter API) — explicit judging requirement
+- Must run on S25 Ultra with NPU acceleration — scored on resource utilization
 - Emergency calls (com.android.dialer) always whitelisted in Accessibility Service
-- All models must be .tflite format
-- Repo must be public, open source licensed, with README by submission deadline (1:30pm May 1)
+- All models must be .tflite format from Qualcomm AI Hub
+- Repo must be public, open source licensed, with README by submission deadline 1:30pm May 1
+- Use of AI coding tools (Claude, Gemini, Copilot) explicitly permitted by organizers

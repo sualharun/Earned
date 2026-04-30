@@ -1,10 +1,12 @@
-# FocusGuard Task Assignments
+# FocusGuard — Task Assignments
 
 Hackathon goal: get a working Android demo that uses on-device ML attention detection to extend focus sessions and block selected distracting apps.
 
+---
+
 ## Shared Rule
 
-Everyone should build against the shared contracts already in `focus-guard/app/src/main/java/com/focusguard`:
+Everyone builds against the shared contracts already in `focus-guard/app/src/main/java/com/focusguard`:
 
 - `ml/AttentionSignal.kt`
 - `ml/FaceCrop.kt`
@@ -12,208 +14,234 @@ Everyone should build against the shared contracts already in `focus-guard/app/s
 - `session/SessionState.kt`
 - `session/SessionManager.kt`
 
-Use dummy data when another person's module is not ready yet. Do not wait for upstream work if your screen/service/scorer can be tested with mocked values.
+Use dummy/hardcoded data when upstream work is not ready. Do not wait for another person's module if your component can be tested with mocked values.
 
-## Person 1: Gabe - Face Detection + Camera
+---
 
-Owner files:
+## Person 1: Gabe — Camera + Face Detection
 
+**Owner files:**
 - `ml/FaceDetector.kt`
 - `ml/MLPipeline.kt`
-- CameraX setup files/classes as needed
-- `app/src/main/assets/blazeface.tflite`
+- CameraX setup files as needed
+- `app/src/main/assets/mediapipe_face_detector.tflite`
 
-Responsibilities:
+**Responsibilities:**
+- Set up CameraX with the front-facing camera
+- Capture frames via `ImageAnalysis` use case
+- Target ~15fps at 640x480 resolution
+- Convert `YUV_420_888` frames to RGB Bitmap, then to normalized float tensor `[1, 256, 256, 3]` (MediaPipe face detector input resolution)
+- Integrate `mediapipe_face_detector.tflite` via LiteRT `CompiledModel` API with `Accelerator.NPU`
+- Parse output: bounding box coordinates + confidence score
+- If confidence >= 0.7: crop face region from frame into a `FaceCrop` bitmap, pass to Person 2
+- If confidence < 0.7: emit `AttentionSignal(faceDetected = false, ...)` directly via `MLPipeline.onAttentionSignal`
+- Call `MLPipeline.onAttentionSignal` with final signal every frame
 
-- Set up CameraX with the front camera.
-- Capture frames using `ImageAnalysis`.
-- Target roughly 15fps and a practical resolution such as 640x480.
-- Convert camera frames from `YUV_420_888` to RGB bitmap or the tensor format required by the model.
-- Integrate BlazeFace through the LiteRT `CompiledModel` API.
-- Prefer NPU acceleration with the required LiteRT accelerator configuration.
-- Detect face bounding boxes and confidence.
-- Crop the detected face region into a `FaceCrop`.
-- Return `FaceDetectionResult.Detected(faceCrop)` when confidence is high enough.
-- Return `FaceDetectionResult.NoFace` when no reliable face is found.
-- Pass the face crop into the rest of `MLPipeline.processFrame(...)`.
-
-Output contract:
-
+**Output contract to Person 2:**
 ```kotlin
-FaceDetectionResult.Detected(
-    FaceCrop(
-        bitmap = croppedFaceBitmap,
-        confidence = confidence,
-        bounds = faceBounds
-    )
+FaceCrop(
+    bitmap = croppedFaceBitmap,  // cropped to bounding box
+    confidence = 0.93f
 )
 ```
 
-First milestone:
+**First milestone:**
+- CameraX frames flowing on S25
+- `FaceDetector.detect(frame)` returns a real FaceCrop on-device via NPU
+- Console/log output confirms NPU delegation (not CPU fallback)
 
-- Camera preview or frame stream is working.
-- `FaceDetector.detect(...)` returns a real face crop on-device.
-- `MLPipeline.processFrame(...)` can emit `AttentionSignal(faceDetected = true/false)`.
+**Notes:**
+- MediaPipe-Face-Detection confirmed available on Qualcomm AI Hub for Snapdragon 8 Elite
+- Model page: https://aihub.qualcomm.com/models/mediapipe_face
+- Two .tflite files ship together: face_detector (yours) and face_landmark_detector (Person 2's)
+- Input resolution is 256x256 per model spec
 
-## Person 2: Rayan - Head Pose + Eye Openness
+---
 
-Owner files:
+## Person 2: Rayan — Head Pose + Eye Openness
 
+**Owner files:**
 - `ml/HeadPoseEstimator.kt`
 - `ml/EyeOpenEstimator.kt`
-- Any model preprocessing helpers needed for face crops
-- `app/src/main/assets/whenet.tflite`
-- `app/src/main/assets/eye_landmark.tflite`
+- `app/src/main/assets/mediapipe_face_landmark_detector.tflite`
+- `app/src/main/assets/head_pose.tflite` (confirm exact filename from AI Hub)
 
-Responsibilities:
+**Responsibilities:**
+- Receive `FaceCrop` from Gabe's FaceDetector
+- **Eye Openness (EyeOpenEstimator):**
+  - Run `mediapipe_face_landmark_detector.tflite` on face crop via LiteRT CompiledModel API with NPU
+  - Extract eye landmark positions from output
+  - Compute Eye Aspect Ratio: EAR = eye height / eye width
+  - EAR < 0.2 = eyes closed; EAR >= 0.2 = eyes open
+- **Head Pose (HeadPoseEstimator):**
+  - Search AI Hub for "head pose" — WHENet is preferred if available
+  - Resize face crop to model's expected input size, normalize
+  - Run inference via LiteRT CompiledModel API with NPU
+  - Output: yaw (left/right), pitch (up/down), roll (tilt) in degrees
+  - Fallback if no dedicated model found: derive approximate yaw/pitch from MediaPipe 3D landmark positions
+- Package all results into `AttentionSignal` and call `MLPipeline.onAttentionSignal`
 
-- Take `FaceCrop` from Gabe's face detector.
-- Resize and normalize the crop for WHENet.
-- Integrate WHENet through the LiteRT `CompiledModel` API.
-- Output yaw, pitch, and roll in degrees.
-- Integrate the eye landmark/openness model through LiteRT.
-- Compute eye aspect ratio, also called EAR.
-- Treat EAR below `0.2` as eyes closed unless testing shows a better threshold.
-- Package face detection, head pose, and eye openness into `AttentionSignal`.
-- Call `MLPipeline.onAttentionSignal` with the final signal.
-
-Output contract:
-
+**Output contract:**
 ```kotlin
 AttentionSignal(
     faceDetected = true,
-    yaw = yaw,
-    pitch = pitch,
-    roll = roll,
-    eyeAspectRatio = ear
+    yaw = -12.3f,        // negative = looking left
+    pitch = 5.1f,        // positive = looking up
+    roll = 2.0f,
+    eyeAspectRatio = 0.31f
 )
 ```
 
-First milestone:
+**First milestone:**
+- `EyeOpenEstimator.estimate(faceCrop)` returns a real EAR value
+- `HeadPoseEstimator.estimate(faceCrop)` returns yaw/pitch/roll
+- Full `AttentionSignal` emitted from a real or static face crop
 
-- `HeadPoseEstimator.estimate(faceCrop)` returns yaw/pitch/roll.
-- `EyeOpenEstimator.estimate(faceCrop)` returns EAR.
-- A fake or real `FaceCrop` can produce a complete `AttentionSignal`.
+**Notes:**
+- `mediapipe_face_landmark_detector.tflite` is the second file from the MediaPipe-Face-Detection download — already available
+- Test with a static saved bitmap of a face while waiting for Gabe's live camera output
+- Confirm head pose model name and tensor shapes from AI Hub before writing preprocessing code
 
-## Person 3: Sanjiv - Attention Scorer + Session Manager + Accessibility Service
+---
 
-Owner files:
+## Person 3: Sanjiv — Attention Scorer + Session Manager + Accessibility Service
 
+**Owner files:**
 - `session/AttentionScorer.kt`
 - `session/SessionManager.kt`
 - `session/SessionState.kt`
 - `service/FocusAccessibilityService.kt`
 - `AndroidManifest.xml`
-- SharedPreferences storage helpers/classes as needed
+- SharedPreferences helpers as needed
 
-Responsibilities:
+**Responsibilities:**
 
-- Implement and tune attention scoring.
-- Focused zone:
+**AttentionScorer:**
+- Consume `AttentionSignal` every frame
+- Focused zone definition:
   - `faceDetected == true`
   - `abs(yaw) < 20`
   - `abs(pitch) < 15`
   - `eyeAspectRatio > 0.2`
-- Score starts at 100.
-- Focused frames recover score.
-- Distracted frames decay score.
-- Clamp score from 0 to 100.
-- Add 2 seconds to the session for every distracted second.
-- Manage active session state with `StateFlow<SessionState>`.
-- Implement session start/stop behavior.
-- Implement countdown timer.
-- Store blacklisted app package names in SharedPreferences.
-- Expose blacklist add/remove/update functions.
-- Connect ML output to app state using `SessionManager.onAttentionSignal(...)`.
-- Configure the Accessibility Service in the manifest and XML.
-- Monitor foreground app changes with `TYPE_WINDOW_STATE_CHANGED`.
-- If an active session is running and a blacklisted app opens, launch FocusGuard back to the foreground.
-- Always allow emergency phone/dialer package access.
-- Mark blocked app events with `SessionManager.onBlockedAppOpened(...)`.
+- Score: Float 0–100, starts at 100
+  - Focused frame: `score += 0.5` (clamp max 100)
+  - Distracted frame: `score -= 1.5` (clamp min 0)
+- Time penalty: every distracted second adds 2 seconds to remaining time
 
-Input contract from ML:
+**SessionManager:**
+- Singleton exposing `StateFlow<SessionState>`
+- Functions: `startSession(durationSeconds, blacklistedApps)`, `stopSession()`
+- Countdown timer as a coroutine on IO dispatcher
+- Blacklist CRUD backed by SharedPreferences
+- `onAttentionSignal(signal)` — feeds AttentionScorer, updates state
+- `onBlockedAppOpened(packageName)` — sets `blockedPackageName` in state
 
+**FocusAccessibilityService:**
+- Extend `AccessibilityService`
+- Manifest config: `accessibilityEventTypes="typeWindowStateChanged"`
+- `onAccessibilityEvent`: if session active AND foreground package in blacklist AND package != `com.android.dialer` → relaunch FocusGuard via Intent
+- Always allow `com.android.dialer` (emergency calls)
+- Reference SessionManager singleton directly
+
+**Input from ML:**
 ```kotlin
-SessionManager.onAttentionSignal(signal)
+SessionManager.onAttentionSignal(signal: AttentionSignal)
 ```
 
-Output contract to UI:
-
+**Output to UI:**
 ```kotlin
-SessionManager.stateFlow
+SessionManager.stateFlow  // StateFlow<SessionState>
 ```
 
-First milestone:
+**First milestone:**
+- Dummy `AttentionSignal` changes score and extends timer correctly
+- `startSession` / `stopSession` updates `SessionState`
+- Accessibility Service detects a test package (e.g. Chrome) and bounces back to FocusGuard
 
-- A dummy `AttentionSignal` changes the score and timer.
-- Starting/stopping a session updates `SessionState`.
-- Accessibility service can detect a test package and bounce back to FocusGuard.
+**Notes:**
+- Accessibility Service is fully independent of ML — start and test this immediately
+- Pre-enable the Accessibility Service on the S25 before demo (Settings → Accessibility)
+- Test bounce logic with Chrome or another installed app as the blocked package
 
-## Person 4: Sual - UI
+---
 
-Owner files:
+## Person 4: Sual — UI
 
+**Owner files:**
 - `ui/HomeScreen.kt`
 - `ui/SessionScreen.kt`
 - `ui/BounceScreen.kt`
 - `MainActivity.kt`
-- Navigation setup files/classes as needed
+- Navigation setup as needed
 
-Responsibilities:
+**Responsibilities:**
 
-- Build the home/setup screen.
-- Let the user select installed apps to block.
-- Let the user choose session duration.
-- Start the session through `SessionManager.startSession(...)`.
-- Build the active session screen.
-- Display remaining time.
-- Display attention score with clear color states:
-  - Green: focused/high score
-  - Yellow: slipping
-  - Red: distracted/low score
-- Display the current distraction reason.
-- Include camera preview if Gabe's CameraX surface is available in time.
-- Build the bounce screen for blocked app events.
-- Show the blocked app package/name, remaining time, and current score.
-- Auto-return to the session screen after a short delay.
-- Observe `SessionManager.stateFlow` from Compose.
-- Use dummy state while Sanjiv finalizes session behavior.
+**HomeScreen:**
+- List installed apps via `PackageManager` with icons, let user toggle which to block
+- Duration picker (e.g. 5 / 15 / 25 / 45 / 60 minutes)
+- "Start Session" button → calls `SessionManager.startSession(...)`
 
-Input contract:
+**SessionScreen:**
+- Large attention score display, color coded:
+  - Green: score >= 70
+  - Yellow: score >= 40
+  - Red: score < 40
+- Countdown timer display, visually pulses when time is being extended
+- Distraction reason label: "No face detected" / "Looking away" / "Eyes closed"
+- Optional: small camera preview if Gabe's CameraX surface is available
 
+**BounceScreen:**
+- Triggered when `SessionState.blockedPackageName != null`
+- Show blocked app name, current score, remaining time
+- "Back to studying" button → calls `SessionManager.clearBlockedApp()`
+- Auto-redirects to SessionScreen after 3 seconds
+
+**Input:**
 ```kotlin
-SessionManager.stateFlow
+SessionManager.stateFlow  // observe with collectAsState()
 ```
 
-Actions to call:
-
+**Actions to call:**
 ```kotlin
 SessionManager.startSession(durationSeconds, selectedPackageNames)
 SessionManager.stopSession()
 SessionManager.clearBlockedApp()
 ```
 
-First milestone:
+**First milestone:**
+- HomeScreen starts a fake session
+- SessionScreen reacts to dummy `SessionState` values
+- BounceScreen appears when `blockedPackageName` is not null
 
-- Home screen can start a fake session.
-- Session screen reacts to `SessionState`.
-- Bounce screen appears when `blockedPackageName` is not null.
+**Notes:**
+- Build entirely against dummy SessionState first — do not wait for Sanjiv or Gabe
+- Polish matters for judges: clean UI with clear color states will score well on UX criterion
+- Use Jetpack Compose for all screens
+
+---
 
 ## Parallel Work Plan
 
-1. Gabe gets CameraX frames flowing and stubs BlazeFace output if needed.
-2. Rayan tests head pose and eye models against a saved/static face crop while waiting for live camera.
-3. Sanjiv finishes session state, scoring, storage, and accessibility bounce independently using fake package names.
-4. Sual builds UI against dummy `SessionState`, then swaps to the real `SessionManager.stateFlow`.
+| Person | Can start now | Blocked until |
+|--------|--------------|---------------|
+| Gabe (1) | CameraX setup, BlazeFace integration | Nothing — start immediately |
+| Rayan (2) | Eye model on static face crop, head pose model search | Gabe's FaceCrop for live integration |
+| Sanjiv (3) | Full Accessibility Service + Session Manager with dummy signals | Nothing — start immediately |
+| Sual (4) | All 3 UI screens with dummy SessionState | Nothing — start immediately |
 
-## Demo Priority
+---
 
-Must work for judging:
+## Demo Script (for judges)
 
-- Start a focus session.
-- Select at least one app to block.
-- Show live or simulated attention score.
-- Extend session time when distracted.
-- Bounce back when a blocked app opens.
-- Clearly mention LiteRT + NPU model path in README/demo, even if fallback stubs are used during development.
+1. Open app → HomeScreen
+2. Select Instagram / TikTok as blocked apps, set 5 minute session
+3. Tap "Start Session" → SessionScreen appears, camera activates
+4. Look straight at phone → score stays green, timer counts down normally
+5. Look away / close eyes → score drops red, timer visibly extends
+6. Try to open Instagram → immediately bounced back to FocusGuard
+7. Return attention → score recovers
 
+**Make sure to verbally call out during demo:**
+- "Running entirely on-device, no network required"
+- "Using LiteRT CompiledModel API with Hexagon NPU acceleration"
+- "Privacy-preserving — no attention data leaves the device"
