@@ -1,36 +1,38 @@
 package com.focusguard.session
 
-import com.focusguard.ml.AttentionSignal
 import kotlin.math.abs
 
 // Person 2: Computes attention score from ML pipeline outputs
-class AttentionScorer {
+class AttentionScorer(
+    private val config: AttentionScoringConfig = AttentionScoringConfig()
+) {
     fun score(
-        signal: AttentionSignal,
+        input: AttentionInput,
         currentScore: Float,
-        focusedIncrement: Float = FOCUSED_INCREMENT,
-        distractedDecrement: Float = DISTRACTED_DECREMENT
     ): AttentionScoreResult {
-        val reason = distractionReasonFor(signal)
+        val reason = distractionReasonFor(input)
         val nextScore = if (reason == DistractionReason.None) {
-            currentScore + focusedIncrement
+            currentScore + config.recoveryRate
         } else {
-            currentScore - distractedDecrement
-        }.coerceIn(MIN_SCORE, MAX_SCORE)
+            currentScore - config.decayRate
+        }.coerceIn(config.minScore, config.maxScore)
 
         return AttentionScoreResult(
             attentionScore = nextScore,
-            isFocused = reason == DistractionReason.None,
+            isFocused = reason == DistractionReason.None && nextScore >= config.focusedThreshold,
             distractionReason = reason
         )
     }
 
-    fun distractionReasonFor(signal: AttentionSignal): DistractionReason {
-        if (!signal.faceDetected) return DistractionReason.FaceMissing
-        if (abs(signal.yaw) >= MAX_ABS_YAW || abs(signal.pitch) >= MAX_ABS_PITCH) {
+    fun distractionReasonFor(input: AttentionInput): DistractionReason {
+        if (!input.faceDetected) return DistractionReason.FaceMissing
+        if (input.faceConfidence < config.minFaceConfidence || input.eyeConfidence < config.minEyeConfidence) {
+            return DistractionReason.LowConfidence
+        }
+        if (abs(input.yaw) > config.maxAbsYaw || abs(input.pitch) > config.maxAbsPitch) {
             return DistractionReason.LookingAway
         }
-        if (signal.eyeAspectRatio <= MIN_EYE_ASPECT_RATIO) {
+        if (input.eyeAspectRatio <= config.minEyeAspectRatio) {
             return DistractionReason.EyesClosed
         }
         return DistractionReason.None
@@ -38,14 +40,22 @@ class AttentionScorer {
 
     companion object {
         const val MIN_SCORE = 0f
-        const val MAX_SCORE = 100f
-        const val FOCUSED_INCREMENT = 0.5f
-        const val DISTRACTED_DECREMENT = 1.5f
-        const val MAX_ABS_YAW = 20f
-        const val MAX_ABS_PITCH = 15f
-        const val MIN_EYE_ASPECT_RATIO = 0.2f
+        const val MAX_SCORE = 1f
     }
 }
+
+data class AttentionScoringConfig(
+    val minScore: Float = AttentionScorer.MIN_SCORE,
+    val maxScore: Float = AttentionScorer.MAX_SCORE,
+    val focusedThreshold: Float = 0.65f,
+    val recoveryRate: Float = 0.025f,
+    val decayRate: Float = 0.075f,
+    val maxAbsYaw: Float = 20f,
+    val maxAbsPitch: Float = 15f,
+    val minEyeAspectRatio: Float = 0.2f,
+    val minFaceConfidence: Float = 0.5f,
+    val minEyeConfidence: Float = 0.5f
+)
 
 data class AttentionScoreResult(
     val attentionScore: Float,
