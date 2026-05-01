@@ -359,6 +359,7 @@ class MainActivity : ComponentActivity() {
                         stampFrames = stampFramesEnabled
                     )
                 }
+                Log.d("FocusGuard_ML", "RAW face=${signal.faceDetected} ear=${signal.eyeAspectRatio} eyeConf=${signal.eyeConfidence} faceConf=${signal.faceConfidence} yaw=${signal.yaw} pitch=${signal.pitch}")
                 handleSignal(signal)
             } catch (e: Exception) {
                 Log.e("FocusGuard_Camera", "Frame processing failed", e)
