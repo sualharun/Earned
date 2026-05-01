@@ -127,6 +127,12 @@ fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
                 onReplayOnboarding()
             })
         }
+        item {
+            LoadDemoButton(onClick = {
+                haptics.confirm()
+                EarnedItStore.resetDemoData()
+            })
+        }
     }
 }
 
@@ -629,6 +635,30 @@ private fun FooterChip() {
                 fontSize = 12.sp,
                 color = EarnedColors.Focus,
                 fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoadDemoButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier
+                .clickable(onClick = onClick)
+                .padding(4.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = EarnedColors.Primary.copy(alpha = 0.10f)
+        ) {
+            Text(
+                "Load demo data",
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = EarnedColors.Primary
             )
         }
     }
