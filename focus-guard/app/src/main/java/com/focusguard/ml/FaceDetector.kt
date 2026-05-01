@@ -4,32 +4,15 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
 import com.focusguard.instrumentation.BenchmarkRegistry
-import com.google.ai.edge.litert.Accelerator
-import com.google.ai.edge.litert.CompiledModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.exp
 
 class FaceDetector(private val context: Context) {
 
-    private val compiledModel: CompiledModel by lazy {
-        try {
-            CompiledModel.create(
-                context.assets,
-                "face_detector.tflite",
-                CompiledModel.Options(Accelerator.NPU)
-            )
-        } catch (e: Exception) {
-            CompiledModel.create(
-                context.assets,
-                "face_detector.tflite",
-                CompiledModel.Options(Accelerator.CPU)
-            )
-        }
+    private val faceModel by lazy {
+        FallbackCompiledModel(context, "face_detector.tflite", TAG)
     }
-
-    private val inputBuffers by lazy { compiledModel.createInputBuffers() }
-    private val outputBuffers by lazy { compiledModel.createOutputBuffers() }
 
     // Pre-calculated anchors for 256x256 model (896 total)
     private val anchors: List<Anchor> = generateAnchors()
@@ -48,9 +31,11 @@ class FaceDetector(private val context: Context) {
             floatValues[i * 3 + 2] = (pixelValue and 0xFF) / 255.0f
         }
         
-        inputBuffers[0].writeFloat(floatValues)
-        BenchmarkRegistry.trace(BenchmarkRegistry.faceDetectInference, "face_detect_inference") {
-            compiledModel.run(inputBuffers, outputBuffers)
+        val outputBuffers = faceModel.run(
+            BenchmarkRegistry.faceDetectInference,
+            "face_detect_inference"
+        ) { inputBuffers ->
+            inputBuffers[0].writeFloat(floatValues)
         }
 
         if (resizedBitmap != frameBitmap) resizedBitmap.recycle()
@@ -161,6 +146,7 @@ class FaceDetector(private val context: Context) {
     data class Anchor(val centerX: Float, val centerY: Float, val width: Float, val height: Float)
 
     companion object {
+        private const val TAG = "FaceDetector"
         private const val INPUT_SIZE = 256
         private const val CONFIDENCE_THRESHOLD = 0.7f
     }

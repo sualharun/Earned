@@ -8,8 +8,6 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.RectF
 import com.focusguard.instrumentation.BenchmarkRegistry
-import com.google.ai.edge.litert.Accelerator
-import com.google.ai.edge.litert.CompiledModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -27,50 +25,20 @@ data class PoseResult(
 class HeadPoseEstimator(private val context: Context) {
 
     // Landmark Detector: [1, 192, 192, 3] float32 -> [1], [1, 468, 3]
-    private val landmarkModel: CompiledModel by lazy {
-        try {
-            CompiledModel.create(
-                context.assets,
-                "face_landmark_detector.tflite",
-                CompiledModel.Options(Accelerator.NPU)
-            )
-        } catch (e: Exception) {
-            CompiledModel.create(
-                context.assets,
-                "face_landmark_detector.tflite",
-                CompiledModel.Options(Accelerator.CPU)
-            )
-        }
+    private val landmarkModel by lazy {
+        FallbackCompiledModel(context, "face_landmark_detector.tflite", TAG)
     }
 
     // Eye Gaze Estimator: [1, 96, 160] float32 (grayscale) -> [1, 2] (pitch, yaw)
-    private val gazeModel: CompiledModel by lazy {
-        try {
-            CompiledModel.create(
-                context.assets,
-                "eyegaze.tflite",
-                CompiledModel.Options(Accelerator.NPU)
-            )
-        } catch (e: Exception) {
-            CompiledModel.create(
-                context.assets,
-                "eyegaze.tflite",
-                CompiledModel.Options(Accelerator.CPU)
-            )
-        }
+    private val gazeModel by lazy {
+        FallbackCompiledModel(context, "eyegaze.tflite", TAG)
     }
-
-    private val landmarkInputBuffers by lazy { landmarkModel.createInputBuffers() }
-    private val landmarkOutputBuffers by lazy { landmarkModel.createOutputBuffers() }
-
-    private val gazeInputBuffers by lazy { gazeModel.createInputBuffers() }
-    private val gazeOutputBuffers by lazy { gazeModel.createOutputBuffers() }
 
     suspend fun estimate(faceCrop: FaceCrop): PoseResult = withContext(Dispatchers.Default) {
         val faceBitmap = faceCrop.bitmap
 
         // --- Step 1: Face Landmark Detection ---
-        val landmarkInputBitmap = BenchmarkRegistry.trace(BenchmarkRegistry.landmarkPreprocess, "landmark_preprocess") {
+        val landmarkInput = BenchmarkRegistry.trace(BenchmarkRegistry.landmarkPreprocess, "landmark_preprocess") {
             val bitmap = Bitmap.createScaledBitmap(faceBitmap, 192, 192, true)
             val pixels = IntArray(192 * 192)
             bitmap.getPixels(pixels, 0, 192, 0, 0, 192, 192)
@@ -81,12 +49,14 @@ class HeadPoseEstimator(private val context: Context) {
                 landmarkFloats[i * 3 + 1] = ((pixel shr 8) and 0xFF) / 255f
                 landmarkFloats[i * 3 + 2] = (pixel and 0xFF) / 255f
             }
-            landmarkInputBuffers[0].writeFloat(landmarkFloats)
-            bitmap
+            LandmarkPreprocessResult(bitmap, landmarkFloats)
         }
 
-        BenchmarkRegistry.trace(BenchmarkRegistry.landmarkInference, "landmark_inference") {
-            landmarkModel.run(landmarkInputBuffers, landmarkOutputBuffers)
+        val landmarkOutputBuffers = landmarkModel.run(
+            BenchmarkRegistry.landmarkInference,
+            "landmark_inference"
+        ) { inputBuffers ->
+            inputBuffers[0].writeFloat(landmarkInput.floats)
         }
 
         val landmarkPostprocess = BenchmarkRegistry.trace(BenchmarkRegistry.landmarkPostprocess, "landmark_postprocess") {
@@ -139,7 +109,7 @@ class HeadPoseEstimator(private val context: Context) {
         val eyeCrop = cropBitmap(faceBitmap, landmarkPostprocess.eyeRect)
         if (eyeCrop.width < 10 || eyeCrop.height < 10) {
             if (eyeCrop != faceBitmap) eyeCrop.recycle()
-            if (landmarkInputBitmap != faceBitmap) landmarkInputBitmap.recycle()
+            if (landmarkInput.bitmap != faceBitmap) landmarkInput.bitmap.recycle()
             return@withContext PoseResult(
                 yaw = 0f,
                 pitch = 0f,
@@ -155,9 +125,11 @@ class HeadPoseEstimator(private val context: Context) {
         }
 
         // --- Step 3: Eye Gaze Estimation ---
-        gazeInputBuffers[0].writeFloat(eyeGazeInputFloats)
-        BenchmarkRegistry.trace(BenchmarkRegistry.eyegazeInference, "eyegaze_inference") {
-            gazeModel.run(gazeInputBuffers, gazeOutputBuffers)
+        val gazeOutputBuffers = gazeModel.run(
+            BenchmarkRegistry.eyegazeInference,
+            "eyegaze_inference"
+        ) { inputBuffers ->
+            inputBuffers[0].writeFloat(eyeGazeInputFloats)
         }
         
         val pose = BenchmarkRegistry.trace(BenchmarkRegistry.eyegazePostprocess, "eyegaze_postprocess") {
@@ -176,7 +148,7 @@ class HeadPoseEstimator(private val context: Context) {
             )
         }
 
-        if (landmarkInputBitmap != faceBitmap) landmarkInputBitmap.recycle()
+        if (landmarkInput.bitmap != faceBitmap) landmarkInput.bitmap.recycle()
         if (eyeCrop != faceBitmap) eyeCrop.recycle()
 
         pose
@@ -272,7 +244,13 @@ class HeadPoseEstimator(private val context: Context) {
         val eyeLandmarks: EyeLandmarkMetadata
     )
 
+    private data class LandmarkPreprocessResult(
+        val bitmap: Bitmap,
+        val floats: FloatArray
+    )
+
     private companion object {
+        const val TAG = "HeadPoseEstimator"
         const val LANDMARK_INPUT_SIZE = 192f
     }
 }
