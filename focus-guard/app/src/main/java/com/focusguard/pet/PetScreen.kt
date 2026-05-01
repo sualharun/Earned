@@ -62,7 +62,7 @@ fun PetScreen(
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
             )
             Text(
-                text = "${state.lifetimeFocusMinutes} lifetime focus minutes",
+                text = "${state.lifetimeFocusMinutes}m lifetime focus",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
             )

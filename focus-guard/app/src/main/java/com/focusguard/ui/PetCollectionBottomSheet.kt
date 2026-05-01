@@ -66,13 +66,12 @@ private data class PetVariant(
 fun PetCollectionBottomSheet(
     currentPet: PetProfile,
     unlockedPetSpecies: List<String>,
-    bankedMinutes: Int,
-    lifetimeFocusMinutes: Int,
+    totalPoints: Int,
     onDismiss: () -> Unit,
     onSelectPet: (PetSpecies, Int) -> Unit,
     onUnlockPet: (PetSpecies, Int) -> Boolean,
 ) {
-    val unlockedStage = unlockedStageFor(lifetimeFocusMinutes)
+    val unlockedStage = unlockedStageFor(totalPoints)
     val ownedSpecies = remember(unlockedPetSpecies, currentPet.species) {
         (unlockedPetSpecies + currentPet.species).distinct()
     }
@@ -132,7 +131,7 @@ fun PetCollectionBottomSheet(
 
             // Progress bar toward next evolution
             EvolutionProgressBar(
-                lifetimeFocusMinutes = lifetimeFocusMinutes,
+                totalPoints = totalPoints,
                 unlockedStage = unlockedStage,
             )
 
@@ -207,7 +206,7 @@ fun PetCollectionBottomSheet(
                 },
                 enabled = when {
                     isCurrentPet -> false
-                    needsUnlock -> bankedMinutes >= unlockCost
+                    needsUnlock -> totalPoints >= unlockCost
                     stageLocked -> false
                     else -> true
                 },
@@ -226,10 +225,10 @@ fun PetCollectionBottomSheet(
                 Text(
                     text = when {
                         isCurrentPet -> "Current buddy"
-                        stageLocked -> "Stage locked · need more focus time"
-                        needsUnlock && bankedMinutes < unlockCost ->
-                            "Need ${unlockCost - bankedMinutes} more banked min"
-                        needsUnlock -> "Unlock & select · $unlockCost min"
+                        stageLocked -> "Stage locked · earn more points"
+                        needsUnlock && totalPoints < unlockCost ->
+                            "Need ${unlockCost - totalPoints} more pts"
+                        needsUnlock -> "Unlock & select · %,d pts".format(unlockCost)
                         else -> "Select ${selected.species.displayName} Stage $displayNum"
                     },
                     fontSize = 15.sp,
@@ -242,12 +241,11 @@ fun PetCollectionBottomSheet(
 
 @Composable
 private fun EvolutionProgressBar(
-    lifetimeFocusMinutes: Int,
+    totalPoints: Int,
     unlockedStage: Int,
 ) {
-    // Find the next internal stage threshold to unlock
-    val maxInternalStage = PetAssets.MAX_STAGE
-    if (unlockedStage >= maxInternalStage) {
+    val nextThreshold = com.focusguard.state.pointsForNextStage(unlockedStage)
+    if (nextThreshold == null) {
         // All stages unlocked
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -266,19 +264,17 @@ private fun EvolutionProgressBar(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    "${lifetimeFocusMinutes}m total",
+                    "%,d pts".format(totalPoints),
                     fontSize = 12.sp,
                     color = EarnedColors.Focus.copy(alpha = 0.7f),
                 )
             }
         }
     } else {
-        // Calculate progress toward next stage
-        val currentThreshold = PetAssets.minutesRequiredForStage(unlockedStage)
-        val nextThreshold = PetAssets.minutesRequiredForStage(unlockedStage + 1)
-        val minutesRemaining = (nextThreshold - lifetimeFocusMinutes).coerceAtLeast(0)
+        val currentThreshold = com.focusguard.state.pointsRequiredForStage(unlockedStage)
+        val pointsRemaining = (nextThreshold - totalPoints).coerceAtLeast(0)
         val range = (nextThreshold - currentThreshold).coerceAtLeast(1)
-        val progressInRange = (lifetimeFocusMinutes - currentThreshold).coerceAtLeast(0)
+        val progressInRange = (totalPoints - currentThreshold).coerceAtLeast(0)
         val progressFraction = (progressInRange.toFloat() / range).coerceIn(0f, 1f)
 
         Surface(
@@ -293,13 +289,13 @@ private fun EvolutionProgressBar(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "${minutesRemaining}m to next evolution",
+                        "%,d pts to next evolution".format(pointsRemaining),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Text(
-                        "${lifetimeFocusMinutes}/${nextThreshold}m",
+                        "%,d / %,d".format(totalPoints, nextThreshold),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                     )
@@ -472,15 +468,11 @@ private fun PetTile(
     }
 }
 
-private fun unlockedStageFor(lifetimeFocusMinutes: Int): Int =
-    (lifetimeFocusMinutes / 120 + 1).coerceIn(PetAssets.MIN_STAGE, PetAssets.MAX_STAGE)
+private fun unlockedStageFor(totalPoints: Int): Int =
+    com.focusguard.state.petStageForPoints(totalPoints)
 
 private fun speciesUnlockCost(species: PetSpecies): Int =
-    when (species) {
-        PetSpecies.KITSU -> 0
-        PetSpecies.OWLY -> 12
-        PetSpecies.LUMI -> 24
-    }
+    com.focusguard.state.SPECIES_UNLOCK_COST[species.id] ?: 0
 
 private fun speciesTone(species: PetSpecies): Color =
     when (species) {

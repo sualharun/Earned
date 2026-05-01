@@ -112,11 +112,11 @@ fun MoreFeatureScreen(title: String, onBack: () -> Unit) {
 fun MorePetDetailScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
     val stageLabel = petStageLabel(state.pet.stage)
-    val nextStageMinutes = nextPetStageMinutes(state.pet.stage)
-    val evolutionProgress = if (nextStageMinutes == null) {
+    val nextStagePts = com.focusguard.state.pointsForNextStage(state.pet.stage)
+    val evolutionProgress = if (nextStagePts == null) {
         1f
     } else {
-        (state.lifetimeFocusMinutes / nextStageMinutes.toFloat()).coerceIn(0f, 1f)
+        (state.points / nextStagePts.toFloat()).coerceIn(0f, 1f)
     }
     var moodBoost by remember { mutableStateOf("Ready") }
 
@@ -148,11 +148,11 @@ fun MorePetDetailScreen(onBack: () -> Unit) {
                         KpiTile("Streak", "${state.streakDays}d", Modifier.weight(1f))
                     }
                     ProgressBlock(
-                        title = if (nextStageMinutes == null) "Adult form" else "Next evolution",
-                        detail = if (nextStageMinutes == null) {
-                            "${state.lifetimeFocusMinutes} lifetime focused minutes recorded."
+                        title = if (nextStagePts == null) "Max evolution" else "Next evolution",
+                        detail = if (nextStagePts == null) {
+                            "%,d total points earned.".format(state.points)
                         } else {
-                            "${state.lifetimeFocusMinutes} of $nextStageMinutes lifetime focused minutes"
+                            "%,d / %,d pts to evolve".format(state.points, nextStagePts)
                         },
                         progress = evolutionProgress,
                         color = EarnedColors.Points
@@ -185,11 +185,11 @@ fun MorePetDetailScreen(onBack: () -> Unit) {
         }
         item {
             SectionCard("Milestones", "Recent growth moments") {
-                StatusRow(Icons.Filled.CheckCircle, "$stageLabel form unlocked", "${state.lifetimeFocusMinutes} lifetime focus minutes recorded.", EarnedColors.Focus)
+                StatusRow(Icons.Filled.CheckCircle, "$stageLabel form unlocked", "%,d total points earned.".format(state.points), EarnedColors.Focus)
                 StatusRow(
                     Icons.Filled.WorkspacePremium,
-                    if (nextStageMinutes == null) "Fully evolved" else "Next evolution",
-                    if (nextStageMinutes == null) "Your pet has reached its adult habitat." else "${(nextStageMinutes - state.lifetimeFocusMinutes).coerceAtLeast(0)} focus minutes remaining.",
+                    if (nextStagePts == null) "Fully evolved" else "Next evolution",
+                    if (nextStagePts == null) "Your pet has reached its final form." else "%,d pts remaining.".format((nextStagePts - state.points).coerceAtLeast(0)),
                     EarnedColors.Points
                 )
                 StatusRow(Icons.Filled.Lock, "Night aura", "Requires a 14 day streak. Current streak: ${state.streakDays}.", MaterialTheme.colorScheme.onSurfaceVariant)
@@ -205,7 +205,7 @@ private fun TrophiesScreen(onBack: () -> Unit) {
     val trophies = listOf(
         Trophy("First Lock", "Complete your first protected focus session.", if (state.allSessions.isNotEmpty()) 1f else 0f, state.allSessions.isNotEmpty()),
         Trophy("Seven Day Spark", "Hold a 7 day streak.", (state.streakDays / 7f).coerceIn(0f, 1f), state.streakDays >= 7),
-        Trophy("Deep Work Bronze", "Reach 250 focused minutes.", (state.lifetimeFocusMinutes / 250f).coerceIn(0f, 1f), state.lifetimeFocusMinutes >= 250),
+        Trophy("Deep Work Bronze", "Earn 1,000 total points.", (state.points / 1000f).coerceIn(0f, 1f), state.points >= 1000),
         Trophy("Clean Desk", "Pass a desk audit with 85+.", cleanDeskProgress, state.deskAudit.score >= 85),
         Trophy("Reward Saver", "Bank 60 reward minutes.", (state.timeBankMinutes / 60f).coerceIn(0f, 1f), state.timeBankMinutes >= 60),
         Trophy("Pet Guardian", "Evolve your pet into its adult form.", (state.pet.stage / 3f).coerceIn(0f, 1f), state.pet.stage >= 3)
@@ -363,12 +363,12 @@ private fun StoreScreen(onBack: () -> Unit) {
     var lastMessage by remember { mutableStateOf("Purchases are saved locally on this device.") }
     val haptics = rememberHaptics()
     val items = listOf(
-        StoreItem("youtube_15", "15 min YouTube pass", "Rewards", 450, "Unlock reward app time", 1),
-        StoreItem("tiktok_30", "30 min TikTok pass", "Rewards", 820, "Spend from Time Bank", 1),
-        StoreItem("lumi_scarf", "Lumi scarf", "Pet", 260, "Equip a cozy pet cosmetic", 1),
-        StoreItem("kitsu_bandana", "Kitsu bandana", "Pet", 320, "Equip a bright focus bandana", 1),
-        StoreItem("owly_glasses", "Owly glasses", "Pet", 380, "Equip study glasses", 2),
-        StoreItem("focus_crown", "Focus crown", "Pet", 620, "Adult form required", 3)
+        StoreItem("youtube_15", "15 min YouTube pass", "Rewards", 500, "Unlock reward app time", 1),
+        StoreItem("tiktok_30", "30 min TikTok pass", "Rewards", 1000, "Spend your earned points", 1),
+        StoreItem("lumi_scarf", "Lumi scarf", "Pet", 300, "Equip a cozy pet cosmetic", 1),
+        StoreItem("kitsu_bandana", "Kitsu bandana", "Pet", 400, "Equip a bright focus bandana", 1),
+        StoreItem("owly_glasses", "Owly glasses", "Pet", 500, "Equip study glasses", 2),
+        StoreItem("focus_crown", "Focus crown", "Pet", 750, "Evolved form required", 3)
     )
 
     MoreDetailScaffold("Store", "Spend points on rewards and pet upgrades.", onBack) {
@@ -997,13 +997,6 @@ private fun petStageLabel(stage: Int): String = when {
     else -> "Champion"
 }
 
-private fun nextPetStageMinutes(stage: Int): Int? = when {
-    stage <= 1 -> 120
-    stage == 2 -> 240
-    stage == 3 -> 360
-    stage == 4 -> 480
-    else -> null
-}
 
 private fun hourLabel(timestampMs: Long): String {
     val hour = Instant.ofEpochMilli(timestampMs).atZone(ZoneId.systemDefault()).hour

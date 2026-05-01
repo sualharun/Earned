@@ -80,8 +80,7 @@ fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
         PetCollectionBottomSheet(
             currentPet = uiState.pet,
             unlockedPetSpecies = uiState.unlockedPetSpecies,
-            bankedMinutes = uiState.timeBankMinutes,
-            lifetimeFocusMinutes = uiState.lifetimeFocusMinutes,
+            totalPoints = uiState.points,
             onDismiss = { showPetCollection = false },
             onSelectPet = { species, stage ->
                 haptics.confirm()
@@ -473,15 +472,13 @@ private fun DailyGoalsSection(
     sessionsToday: List<FocusSessionSummary>,
     focusMinutesToday: Int,
 ) {
-    val sessionGoal = 2
-    val minuteGoal = 45
+    val pointsToday = sessionsToday.sumOf { it.pointsEarned }
     val focusSessions = sessionsToday.count { it.success }
     val bestScore = sessionsToday.maxOfOrNull { it.focusScore } ?: 0
-    val cleanSessions = sessionsToday.count { it.success && it.distractionCount == 0 }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            "Daily goals",
+            "Daily challenges",
             fontFamily = FontFamily.Serif,
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
@@ -489,25 +486,28 @@ private fun DailyGoalsSection(
         )
 
         GoalCard(
-            title = "Complete $sessionGoal focus sessions",
-            detail = "$focusSessions of $sessionGoal finished today",
-            progress = focusSessions / sessionGoal.toFloat(),
-            icon = Icons.Filled.Spa,
-            tint = EarnedColors.Focus
-        )
-        GoalCard(
-            title = "Bank $minuteGoal focused minutes",
-            detail = "$focusMinutesToday of $minuteGoal minutes",
-            progress = focusMinutesToday / minuteGoal.toFloat(),
-            icon = Icons.Filled.Timer,
-            tint = EarnedColors.Primary
-        )
-        GoalCard(
-            title = "Keep one session distraction-free",
-            detail = if (cleanSessions > 0) "Clean session logged" else "Best focus score $bestScore%",
-            progress = if (cleanSessions > 0) 1f else bestScore / 100f,
+            title = "Earn 100 pts from sessions",
+            detail = "$pointsToday / 100 pts earned today",
+            progress = pointsToday / 100f,
             icon = Icons.Filled.Star,
-            tint = EarnedColors.Points
+            tint = EarnedColors.Points,
+            reward = "+100 pts"
+        )
+        GoalCard(
+            title = "Complete 2 focus sessions",
+            detail = "$focusSessions of 2 finished today",
+            progress = focusSessions / 2f,
+            icon = Icons.Filled.Spa,
+            tint = EarnedColors.Focus,
+            reward = "+100 pts"
+        )
+        GoalCard(
+            title = "Score 80%+ in a session",
+            detail = if (bestScore >= 80) "Best score ${bestScore}%" else "Best so far ${bestScore}%",
+            progress = if (bestScore >= 80) 1f else bestScore / 80f,
+            icon = Icons.Filled.Timer,
+            tint = EarnedColors.Primary,
+            reward = "+100 pts"
         )
 
         if (sessionsToday.isNotEmpty()) {
@@ -523,7 +523,9 @@ private fun GoalCard(
     progress: Float,
     icon: ImageVector,
     tint: Color,
+    reward: String = "",
 ) {
+    val done = progress >= 1f
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = tween(550),
@@ -543,14 +545,28 @@ private fun GoalCard(
             Surface(
                 modifier = Modifier.size(42.dp),
                 shape = CircleShape,
-                color = tint.copy(alpha = 0.14f)
+                color = if (done) tint.copy(alpha = 0.22f) else tint.copy(alpha = 0.14f)
             ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = HomeTitleColor)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = HomeTitleColor)
+                    if (reward.isNotEmpty()) {
+                        Text(
+                            reward,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (done) EarnedColors.Focus else EarnedColors.Points,
+                        )
+                    }
+                }
                 Spacer(Modifier.height(2.dp))
                 Text(detail, fontSize = 12.sp, color = HomeSubtitleColor)
                 Spacer(Modifier.height(9.dp))
@@ -565,12 +581,6 @@ private fun GoalCard(
                     strokeCap = StrokeCap.Round
                 )
             }
-            Text(
-                "${(animatedProgress * 100).toInt()}%",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = tint
-            )
         }
     }
 }

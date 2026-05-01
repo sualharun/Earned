@@ -246,7 +246,7 @@ object EarnedItStore {
                 pet = state.pet.copy(
                     species = species,
                     name = name.ifBlank { species.replaceFirstChar { c -> c.uppercase() } },
-                    stage = stage.coerceIn(1, unlockedPetStageFor(state.lifetimeFocusMinutes)),
+                    stage = stage.coerceIn(1, petStageForPoints(state.points)),
                     fullness = state.pet.fullness.coerceIn(0, 100),
                     mood = state.pet.mood.ifBlank { InitialPetMood }
                 ),
@@ -255,29 +255,19 @@ object EarnedItStore {
         }
     }
 
-    fun unlockPetSpecies(species: String, costMinutes: Int): PurchaseResult {
+    fun unlockPetSpecies(species: String, costPoints: Int): PurchaseResult {
         val current = _state.value
         if (current.unlockedPetSpecies.contains(species) || current.pet.species == species) {
             return PurchaseResult.AlreadyOwned
         }
-        if (current.timeBankMinutes < costMinutes) return PurchaseResult.InsufficientPoints
+        if (current.points < costPoints) return PurchaseResult.InsufficientPoints
 
-        val now = System.currentTimeMillis()
         mutate { state ->
             val displayName = species.replaceFirstChar { c -> c.uppercase() }
-            val transaction = TimeBankTransaction(
-                id = now,
-                type = "pet_unlock",
-                minutes = -costMinutes,
-                title = "-${costMinutes}m unlocked",
-                detail = "$displayName added to your pet collection.",
-                timestampMs = now,
-                rewardApp = displayName
-            )
             state.copy(
+                points = state.points - costPoints,
                 unlockedPetSpecies = (state.unlockedPetSpecies + species).distinct(),
-                timeBankTransactions = listOf(transaction) + state.timeBankTransactions
-            ).withPrivacyEvent("pet", "$displayName unlocked", "Spent $costMinutes banked minutes on a pet unlock.")
+            ).withPrivacyEvent("pet", "$displayName unlocked", "Spent $costPoints points on a pet unlock.")
         }
         return PurchaseResult.Success
     }
@@ -323,12 +313,9 @@ object EarnedItStore {
         val now = System.currentTimeMillis()
         val durationMinutes = (durationSeconds / 60f).roundToInt().coerceAtLeast(1)
         val score = focusScore.roundToInt().coerceIn(0, 100)
-        val success = !endedEarly && score >= 70
-        val points = if (success) {
-            (durationMinutes * 3 + score / 2 + if (distractionCount == 0) 25 else 0)
-        } else {
-            0
-        }
+        val success = !endedEarly && score >= 40
+        // 10 points per minute, scaled by focus percentage
+        val points = (durationMinutes * 10 * score / 100)
         val bankMinutes = if (success) (durationMinutes / 5).coerceAtLeast(1) else 0
         mutate { state ->
             val session = FocusSessionSummary(
@@ -354,9 +341,10 @@ object EarnedItStore {
                 detail = "${durationMinutes} minute session at ${score}% focus.",
                 timestampMs = now
             )
-            val nextStage = petStageForLifetimeFocus(state.lifetimeFocusMinutes + durationMinutes)
+            val newTotalPoints = state.points + points
+            val nextStage = petStageForPoints(newTotalPoints)
             val updated = state.copy(
-                points = state.points + points,
+                points = newTotalPoints,
                 allSessions = (listOf(session) + state.allSessions).take(250),
                 timeBankTransactions = (if (bankMinutes > 0) listOf(transaction) else emptyList()) + state.timeBankTransactions,
                 pet = state.pet.copy(
@@ -562,24 +550,28 @@ enum class PurchaseResult {
 
 fun seedDemoState(): EarnedItUiState {
     val now = System.currentTimeMillis()
-    // Total: 45+25+50+90+60+120+90+60 = 540+60+30 = 630 min → stage 5 unlocked (need 480+)
+    // Points: 10 × minutes × score/100
+    // 45×10×91/100=409, 25×10×84/100=210, 50×10×94/100=470, 90×10×89/100=801,
+    // 60×10×96/100=576, 120×10×93/100=1116, 90×10×88/100=792, 60×10×95/100=570,
+    // 60×10×90/100=540, 30×10×87/100=261  → Total: 5,745 pts (before spending)
     val sessions = listOf(
-        FocusSessionSummary(now - 3_600_000L, 45, 91, true, 140, 1, now - 6_300_000L, now - 3_600_000L, 45, false, listOf("Instagram"), 9, 42),
-        FocusSessionSummary(now - 86_400_000L, 25, 84, true, 105, 2, now - 87_900_000L, now - 86_400_000L, 25, false, listOf("TikTok"), 5, 58),
-        FocusSessionSummary(now - 172_800_000L, 50, 94, true, 175, 0, now - 175_800_000L, now - 172_800_000L, 50, false, listOf("YouTube"), 10, 0),
-        FocusSessionSummary(now - 259_200_000L, 90, 89, true, 315, 1, now - 264_600_000L, now - 259_200_000L, 90, false, listOf("Instagram", "Discord"), 18, 28),
-        FocusSessionSummary(now - 345_600_000L, 60, 96, true, 235, 0, now - 349_200_000L, now - 345_600_000L, 60, false, listOf("TikTok"), 12, 0),
-        FocusSessionSummary(now - 432_000_000L, 120, 93, true, 410, 0, now - 439_200_000L, now - 432_000_000L, 120, false, listOf("Instagram", "TikTok"), 24, 0),
-        FocusSessionSummary(now - 518_400_000L, 90, 88, true, 305, 1, now - 523_800_000L, now - 518_400_000L, 90, false, listOf("YouTube", "Discord"), 18, 35),
-        FocusSessionSummary(now - 604_800_000L, 60, 95, true, 240, 0, now - 608_400_000L, now - 604_800_000L, 60, false, listOf("Instagram"), 12, 0),
-        FocusSessionSummary(now - 691_200_000L, 60, 90, true, 230, 1, now - 694_800_000L, now - 691_200_000L, 60, false, listOf("TikTok"), 12, 24),
-        FocusSessionSummary(now - 777_600_000L, 30, 87, true, 115, 0, now - 779_400_000L, now - 777_600_000L, 30, false, listOf("YouTube"), 6, 0),
+        FocusSessionSummary(now - 3_600_000L, 45, 91, true, 409, 1, now - 6_300_000L, now - 3_600_000L, 45, false, listOf("Instagram"), 9, 42),
+        FocusSessionSummary(now - 86_400_000L, 25, 84, true, 210, 2, now - 87_900_000L, now - 86_400_000L, 25, false, listOf("TikTok"), 5, 58),
+        FocusSessionSummary(now - 172_800_000L, 50, 94, true, 470, 0, now - 175_800_000L, now - 172_800_000L, 50, false, listOf("YouTube"), 10, 0),
+        FocusSessionSummary(now - 259_200_000L, 90, 89, true, 801, 1, now - 264_600_000L, now - 259_200_000L, 90, false, listOf("Instagram", "Discord"), 18, 28),
+        FocusSessionSummary(now - 345_600_000L, 60, 96, true, 576, 0, now - 349_200_000L, now - 345_600_000L, 60, false, listOf("TikTok"), 12, 0),
+        FocusSessionSummary(now - 432_000_000L, 120, 93, true, 1116, 0, now - 439_200_000L, now - 432_000_000L, 120, false, listOf("Instagram", "TikTok"), 24, 0),
+        FocusSessionSummary(now - 518_400_000L, 90, 88, true, 792, 1, now - 523_800_000L, now - 518_400_000L, 90, false, listOf("YouTube", "Discord"), 18, 35),
+        FocusSessionSummary(now - 604_800_000L, 60, 95, true, 570, 0, now - 608_400_000L, now - 604_800_000L, 60, false, listOf("Instagram"), 12, 0),
+        FocusSessionSummary(now - 691_200_000L, 60, 90, true, 540, 1, now - 694_800_000L, now - 691_200_000L, 60, false, listOf("TikTok"), 12, 24),
+        FocusSessionSummary(now - 777_600_000L, 30, 87, true, 261, 0, now - 779_400_000L, now - 777_600_000L, 30, false, listOf("YouTube"), 6, 0),
     )
+    // 5,745 earned - 300 (Lumi scarf) - 1000 (Owly unlock) - 2500 (Lumi unlock) = 1,945 balance
     return EarnedItUiState(
         onboardingComplete = true,
         profile = UserProfile("Sanjiv", "sual", "00000000-0000-4000-8000-000000000001"),
-        points = 50_000,
-        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 5, fullness = 92, mood = "Energized", equippedCosmetic = "Lumi scarf"),
+        points = 1_945,
+        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 3, fullness = 92, mood = "Energized", equippedCosmetic = "Lumi scarf"),
         unlockedPetSpecies = listOf("kitsu", "lumi", "owly"),
         unlockedFocusBackgrounds = listOf("cozy_desk", "balcony_night"),
         selectedFocusBackground = "cozy_desk",
@@ -590,9 +582,9 @@ fun seedDemoState(): EarnedItUiState {
             TimeBankTransaction(now - 86_400_000L, "earn", 5, "+5m earned", "25 minute session at 84% focus.", now - 86_400_000L),
             TimeBankTransaction(now - 259_200_000L, "earn", 18, "+18m earned", "90 minute session at 89% focus.", now - 259_200_000L),
             TimeBankTransaction(now - 345_600_000L, "earn", 12, "+12m earned", "60 minute session at 96% focus.", now - 345_600_000L),
-            TimeBankTransaction(now - 604_800_000L, "earn", 180, "+180m demo grant", "Judge demo balance for reward redemption.", now - 604_800_000L)
+            TimeBankTransaction(now - 604_800_000L, "earn", 60, "+60m demo grant", "Demo balance for reward redemption.", now - 604_800_000L)
         ),
-        storePurchases = listOf(StorePurchase(now - 120_000L, "lumi_scarf", "Lumi scarf", "Pet", 260, now - 120_000L, true)),
+        storePurchases = listOf(StorePurchase(now - 120_000L, "lumi_scarf", "Lumi scarf", "Pet", 300, now - 120_000L, true)),
         scheduledBlocks = listOf(
             ScheduledFocusBlock(now + 1_800_000L, "Focus block", now + 1_800_000L, 25, listOf("Instagram", "TikTok")),
             ScheduledFocusBlock(now + 86_400_000L, "Algorithms set", now + 86_400_000L, 50, listOf("YouTube", "Discord"))
@@ -643,10 +635,27 @@ private fun EarnedItUiState.withStableUserIdentity(): EarnedItUiState {
     return copy(profile = profile.copy(id = id, username = username))
 }
 
-private fun unlockedPetStageFor(minutes: Int): Int = petStageForLifetimeFocus(minutes)
+/** Points required for each pet evolution stage. */
+val PET_STAGE_THRESHOLDS = mapOf(1 to 0, 2 to 500, 3 to 1_500)
 
-private fun petStageForLifetimeFocus(minutes: Int): Int =
-    (minutes / 120 + 1).coerceIn(1, 5)
+/** Species unlock costs in points. */
+val SPECIES_UNLOCK_COST = mapOf("kitsu" to 0, "owly" to 1_000, "lumi" to 2_500)
+
+fun petStageForPoints(totalPoints: Int): Int {
+    var stage = 1
+    for ((s, threshold) in PET_STAGE_THRESHOLDS) {
+        if (totalPoints >= threshold) stage = s
+    }
+    return stage.coerceIn(1, 5)
+}
+
+fun pointsForNextStage(currentStage: Int): Int? {
+    val next = currentStage + 1
+    return PET_STAGE_THRESHOLDS[next]
+}
+
+fun pointsRequiredForStage(stage: Int): Int =
+    PET_STAGE_THRESHOLDS[stage] ?: 0
 
 private fun calculateStreakDays(sessions: List<FocusSessionSummary>): Int {
     val successDays = sessions.filter { it.success }
