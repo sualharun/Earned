@@ -121,15 +121,8 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
         mlScore >= 40f -> FocusPhase.Refocus
         else -> FocusPhase.Distracted
     }
-    var phaseOverride by remember { mutableStateOf<FocusPhase?>(null) }
-    val phase = phaseOverride ?: mlPhase
-    val displayScore = phaseOverride?.let {
-        when (it) {
-            FocusPhase.Focused -> 84
-            FocusPhase.Refocus -> 56
-            FocusPhase.Distracted -> 28
-        }
-    } ?: mlScore.toInt()
+    val phase = mlPhase
+    val displayScore = mlScore.toInt()
     val phaseColor by animateColorAsState(
         targetValue = when (phase) {
             FocusPhase.Focused -> EarnedColors.Focus
@@ -202,12 +195,6 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
                 timer = "%02d:%02d".format(minutes, seconds),
                 score = displayScore,
                 progress = progress,
-            )
-
-            PhaseTestControls(
-                selectedPhase = phaseOverride,
-                mlPhase = mlPhase,
-                onSelected = { phaseOverride = it }
             )
 
             SessionControls(
@@ -604,101 +591,6 @@ private fun PhaseHint(
         }
     }
 }
-
-@Composable
-private fun PhaseTestControls(
-    selectedPhase: FocusPhase?,
-    mlPhase: FocusPhase,
-    onSelected: (FocusPhase?) -> Unit,
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(top = 12.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("ML state preview", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    "Auto: ${phaseLabel(mlPhase)}",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PhasePreviewChip(
-                    label = "Auto",
-                    selected = selectedPhase == null,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    onClick = { onSelected(null) },
-                    modifier = Modifier.weight(1f)
-                )
-                PhasePreviewChip(
-                    label = "Focused",
-                    selected = selectedPhase == FocusPhase.Focused,
-                    color = EarnedColors.Focus,
-                    onClick = { onSelected(FocusPhase.Focused) },
-                    modifier = Modifier.weight(1f)
-                )
-                PhasePreviewChip(
-                    label = "Refocus",
-                    selected = selectedPhase == FocusPhase.Refocus,
-                    color = EarnedColors.Warning,
-                    onClick = { onSelected(FocusPhase.Refocus) },
-                    modifier = Modifier.weight(1f)
-                )
-                PhasePreviewChip(
-                    label = "Distracted",
-                    selected = selectedPhase == FocusPhase.Distracted,
-                    color = Color(0xFFE38A74),
-                    onClick = { onSelected(FocusPhase.Distracted) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PhasePreviewChip(
-    label: String,
-    selected: Boolean,
-    color: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier
-            .height(36.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) color.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        border = BorderStroke(
-            width = if (selected) 1.5.dp else 1.dp,
-            color = if (selected) color else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
-        )
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                label,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (selected) color else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-        }
-    }
-}
-
 
 @Composable
 private fun SessionControls(
