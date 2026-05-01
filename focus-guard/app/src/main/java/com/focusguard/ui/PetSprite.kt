@@ -1,6 +1,5 @@
 package com.focusguard.ui
 
-import android.graphics.BitmapFactory
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -13,18 +12,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.focusguard.pet.PetAssets
 import com.focusguard.state.PetProfile
 import com.focusguard.ui.theme.EarnedColors
 
@@ -35,15 +33,7 @@ fun PetSprite(
     modifier: Modifier = Modifier,
     glow: Boolean = true
 ) {
-    val context = LocalContext.current
-    val fileName = "${pet.species}-${assetStageForPet(pet.species, pet.stage)}.png"
-    val bitmap = remember(fileName) {
-        runCatching {
-            context.assets.open(fileName).use { stream ->
-                BitmapFactory.decodeStream(stream).asImageBitmap()
-            }
-        }.getOrNull()
-    }
+    val spriteRes = PetAssets.spriteRes(pet.species, pet.stage)
     val transition = rememberInfiniteTransition(label = "petIdle")
     val bob = transition.animateFloat(
         initialValue = 0.98f,
@@ -78,24 +68,13 @@ fun PetSprite(
             )
         }
 
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap,
-                contentDescription = pet.name,
-                modifier = Modifier
-                    .size(size)
-                    .scale(bob.value),
-                contentScale = ContentScale.Fit
-            )
-        }
+        Image(
+            painter = painterResource(spriteRes),
+            contentDescription = pet.name,
+            modifier = Modifier
+                .size(size)
+                .scale(bob.value),
+            contentScale = ContentScale.Fit
+        )
     }
-}
-
-private fun assetStageForPet(species: String, stage: Int): Int = when {
-    stage <= 1 -> 1
-    stage == 2 -> 2
-    species == "lumi" -> 4
-    species == "kitsu" -> 5
-    species == "owly" -> 5
-    else -> 3
 }

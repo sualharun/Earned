@@ -2,8 +2,10 @@ package com.focusguard.ui
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Spa
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -50,7 +53,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,7 +61,10 @@ import com.focusguard.state.EarnedItStore
 import com.focusguard.state.EarnedItUiState
 import com.focusguard.state.FocusSessionSummary
 import com.focusguard.state.PetProfile
+import com.focusguard.state.PurchaseResult
 import com.focusguard.ui.theme.EarnedColors
+import java.time.Instant
+import java.time.ZoneId
 import java.util.Calendar
 
 private val HomeTitleColor = Color(0xFF1F3D24)
@@ -69,6 +74,26 @@ private val HomeSubtitleColor = HomeTitleColor.copy(alpha = 0.65f)
 fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
     val uiState by EarnedItStore.state.collectAsState()
     val haptics = rememberHaptics()
+    var showPetCollection by remember { mutableStateOf(false) }
+
+    if (showPetCollection) {
+        PetCollectionBottomSheet(
+            currentPet = uiState.pet,
+            unlockedPetSpecies = uiState.unlockedPetSpecies,
+            bankedMinutes = uiState.timeBankMinutes,
+            lifetimeFocusMinutes = uiState.lifetimeFocusMinutes,
+            onDismiss = { showPetCollection = false },
+            onSelectPet = { species, stage ->
+                haptics.confirm()
+                EarnedItStore.pickPetVersion(species.id, species.displayName, stage)
+                showPetCollection = false
+            },
+            onUnlockPet = { species, costMinutes ->
+                haptics.confirm()
+                EarnedItStore.unlockPetSpecies(species.id, costMinutes) == PurchaseResult.Success
+            },
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -78,7 +103,15 @@ fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(22.dp)
     ) {
         item { Greeter(petName = uiState.pet.name, streakDays = uiState.streakDays) }
-        item { PetHeroCard(pet = uiState.pet) }
+        item {
+            PetHeroCard(
+                pet = uiState.pet,
+                onClick = {
+                    haptics.select()
+                    showPetCollection = true
+                }
+            )
+        }
         item {
             StartFocusCta(onClick = {
                 haptics.confirm()
@@ -86,19 +119,7 @@ fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
             })
         }
         item { StatRibbon(state = uiState) }
-        item { TrailHeader() }
-        if (uiState.sessionsToday.isEmpty()) {
-            item { EmptyTrail() }
-        } else {
-            val visible = uiState.sessionsToday.take(3)
-            itemsIndexed(visible, key = { _, s -> s.id }) { index, session ->
-                TimelineRow(
-                    session = session,
-                    isFirst = index == 0,
-                    isLast = index == visible.lastIndex
-                )
-            }
-        }
+        item { DailyGoalsSection(uiState.sessionsToday, uiState.focusMinutesToday) }
         item { FooterChip() }
         item {
             ReplayLink(onClick = {
@@ -173,11 +194,13 @@ private fun StreakChip(days: Int) {
 }
 
 @Composable
-private fun PetHeroCard(pet: PetProfile) {
+private fun PetHeroCard(pet: PetProfile, onClick: () -> Unit) {
     val happy = pet.fullness > 60
     val washColor = if (happy) EarnedColors.Focus else EarnedColors.Warning
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(28.dp),
         color = Color.White,
         shadowElevation = 6.dp
@@ -440,114 +463,147 @@ private fun StatChip(
 }
 
 @Composable
-private fun TrailHeader() {
-    Text(
-        "Today's trail",
-        fontFamily = FontFamily.Serif,
-        fontSize = 22.sp,
-        fontWeight = FontWeight.Bold,
-        color = HomeTitleColor
-    )
-}
-
-@Composable
-private fun TimelineRow(
-    session: FocusSessionSummary,
-    isFirst: Boolean,
-    isLast: Boolean
+private fun DailyGoalsSection(
+    sessionsToday: List<FocusSessionSummary>,
+    focusMinutesToday: Int,
 ) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        // Left rail with dot
-        Box(
-            modifier = Modifier
-                .width(28.dp)
-                .height(if (isLast) 60.dp else 84.dp),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            // vertical guideline (skip top half on first row, bottom half on last row)
-            if (!isFirst) {
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .height(20.dp)
-                        .background(HomeTitleColor.copy(alpha = 0.10f))
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .padding(top = 18.dp)
-                    .size(12.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (session.success) EarnedColors.Focus else EarnedColors.Warning
-                    )
-            )
-            if (!isLast) {
-                Box(
-                    modifier = Modifier
-                        .padding(top = 36.dp)
-                        .width(2.dp)
-                        .height(48.dp)
-                        .background(HomeTitleColor.copy(alpha = 0.10f))
-                )
-            }
-        }
-        Spacer(Modifier.width(8.dp))
-        Surface(
-            modifier = Modifier
-                .weight(1f)
-                .padding(top = 6.dp),
-            shape = RoundedCornerShape(16.dp),
-            color = Color.White,
-            shadowElevation = 1.dp
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "${session.durationMinutes} min · ${session.focusScore}% focus",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                        color = HomeTitleColor
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        if (session.success)
-                            "${session.distractionCount} distractions handled"
-                        else
-                            "Ended early",
-                        fontSize = 12.sp,
-                        color = HomeSubtitleColor
-                    )
-                }
-                Text(
-                    if (session.success) "+${session.pointsEarned}" else "0",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (session.success) EarnedColors.Points else HomeSubtitleColor
-                )
-            }
+    val sessionGoal = 2
+    val minuteGoal = 45
+    val focusSessions = sessionsToday.count { it.success }
+    val bestScore = sessionsToday.maxOfOrNull { it.focusScore } ?: 0
+    val cleanSessions = sessionsToday.count { it.success && it.distractionCount == 0 }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            "Daily goals",
+            fontFamily = FontFamily.Serif,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = HomeTitleColor
+        )
+
+        GoalCard(
+            title = "Complete $sessionGoal focus sessions",
+            detail = "$focusSessions of $sessionGoal finished today",
+            progress = focusSessions / sessionGoal.toFloat(),
+            icon = Icons.Filled.Spa,
+            tint = EarnedColors.Focus
+        )
+        GoalCard(
+            title = "Bank $minuteGoal focused minutes",
+            detail = "$focusMinutesToday of $minuteGoal minutes",
+            progress = focusMinutesToday / minuteGoal.toFloat(),
+            icon = Icons.Filled.Timer,
+            tint = EarnedColors.Primary
+        )
+        GoalCard(
+            title = "Keep one session distraction-free",
+            detail = if (cleanSessions > 0) "Clean session logged" else "Best focus score $bestScore%",
+            progress = if (cleanSessions > 0) 1f else bestScore / 100f,
+            icon = Icons.Filled.Star,
+            tint = EarnedColors.Points
+        )
+
+        if (sessionsToday.isNotEmpty()) {
+            TodayRecap(sessionsToday.first())
         }
     }
 }
 
 @Composable
-private fun EmptyTrail() {
+private fun GoalCard(
+    title: String,
+    detail: String,
+    progress: Float,
+    icon: ImageVector,
+    tint: Color,
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(550),
+        label = "dailyGoalProgress"
+    )
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White,
+        shadowElevation = 1.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = CircleShape,
+                color = tint.copy(alpha = 0.14f)
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = HomeTitleColor)
+                Spacer(Modifier.height(2.dp))
+                Text(detail, fontSize = 12.sp, color = HomeSubtitleColor)
+                Spacer(Modifier.height(9.dp))
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = tint,
+                    trackColor = HomeTitleColor.copy(alpha = 0.08f),
+                    strokeCap = StrokeCap.Round
+                )
+            }
+            Text(
+                "${(animatedProgress * 100).toInt()}%",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = tint
+            )
+        }
+    }
+}
+
+@Composable
+private fun TodayRecap(session: FocusSessionSummary) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         color = HomeTitleColor.copy(alpha = 0.04f)
     ) {
-        Text(
-            "Your trail starts with your first session today.",
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
-            fontSize = 13.sp,
-            color = HomeSubtitleColor,
-            textAlign = TextAlign.Center
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Latest session", fontSize = 12.sp, color = HomeSubtitleColor)
+                Text(
+                    "${session.durationMinutes} min · ${session.focusScore}% focus",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = HomeTitleColor
+                )
+            }
+            Text(
+                formatSessionTime(session.startTimeMs),
+                fontSize = 12.sp,
+                color = HomeSubtitleColor
+            )
+        }
     }
+}
+
+private fun formatSessionTime(timestampMs: Long): String {
+    val time = Instant.ofEpochMilli(timestampMs).atZone(ZoneId.systemDefault()).toLocalTime()
+    val hour = time.hour % 12
+    val displayHour = if (hour == 0) 12 else hour
+    val suffix = if (time.hour < 12) "AM" else "PM"
+    return "%d:%02d %s".format(displayHour, time.minute, suffix)
 }
 
 @Composable

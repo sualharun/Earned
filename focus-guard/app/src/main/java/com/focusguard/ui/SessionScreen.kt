@@ -1,334 +1,213 @@
 package com.focusguard.ui
 
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.EaseInOutCubic
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Spa
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.focusguard.R
 import com.focusguard.session.SessionManager
+import com.focusguard.state.EarnedItStore
+import com.focusguard.state.PetProfile
+import com.focusguard.state.PurchaseResult
 import com.focusguard.ui.theme.EarnedColors
+
+private enum class FocusPhase {
+    Focused,
+    Refocus,
+    Distracted
+}
+
+private data class FocusBackground(
+    val id: String,
+    val title: String,
+    val costMinutes: Int,
+    @DrawableRes val imageRes: Int,
+)
+
+private val focusBackgrounds = listOf(
+    FocusBackground("cozy_desk", "Cozy Desk", 0, R.drawable.focus_bg_cozy_desk),
+    FocusBackground("balcony_night", "Balcony Night", 20, R.drawable.focus_bg_balcony_night),
+)
 
 @Composable
 fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
-    val state by SessionManager.stateFlow.collectAsState()
-    val haptics = rememberHaptics()
+    val session by SessionManager.stateFlow.collectAsState()
+    val appState by EarnedItStore.state.collectAsState()
 
-    LaunchedEffect(state.isActive) {
-        if (!state.isActive && state.remainingSeconds <= 0) {
+    LaunchedEffect(session.isActive, session.remainingSeconds) {
+        if (!session.isActive && session.remainingSeconds <= 0) {
             onSessionEnd(false)
         }
     }
 
-    val score = (state.attentionScore * 100f).coerceIn(0f, 100f)
-    val minutes = state.remainingSeconds / 60
-    val seconds = state.remainingSeconds % 60
-    val totalDuration = state.initialDurationSeconds.coerceAtLeast(state.remainingSeconds)
-    val progress = if (totalDuration > 0) 1f - (state.remainingSeconds.toFloat() / totalDuration) else 0f
-    val confidence = score / 100f
-
-    // Phase determination
-    val phase = when {
-        score >= 70f -> "FOCUSED"
-        score >= 40f -> "GRACE"
-        else -> "DISTRACTED"
+    val mlScore = (session.attentionScore * 100f).coerceIn(0f, 100f)
+    val mlPhase = when {
+        mlScore >= 70f -> FocusPhase.Focused
+        mlScore >= 40f -> FocusPhase.Refocus
+        else -> FocusPhase.Distracted
     }
-
+    var phaseOverride by remember { mutableStateOf<FocusPhase?>(null) }
+    val phase = phaseOverride ?: mlPhase
+    val displayScore = phaseOverride?.let {
+        when (it) {
+            FocusPhase.Focused -> 84
+            FocusPhase.Refocus -> 56
+            FocusPhase.Distracted -> 28
+        }
+    } ?: mlScore.toInt()
     val phaseColor by animateColorAsState(
         targetValue = when (phase) {
-            "FOCUSED" -> EarnedColors.Focus
-            "GRACE" -> EarnedColors.Warning
-            else -> EarnedColors.Danger
+            FocusPhase.Focused -> EarnedColors.Focus
+            FocusPhase.Refocus -> EarnedColors.Warning
+            FocusPhase.Distracted -> EarnedColors.Danger
         },
-        animationSpec = tween(500),
-        label = "phaseColor"
+        animationSpec = tween(650),
+        label = "phase_color"
+    )
+    val sceneDim by animateFloatAsState(
+        targetValue = when (phase) {
+            FocusPhase.Focused -> 0.04f
+            FocusPhase.Refocus -> 0.18f
+            FocusPhase.Distracted -> 0.42f
+        },
+        animationSpec = tween(800, easing = EaseInOutCubic),
+        label = "scene_dim"
+    )
+    val amberGlow by animateFloatAsState(
+        targetValue = if (phase == FocusPhase.Refocus) 0.42f else 0.12f,
+        animationSpec = tween(700, easing = EaseInOutCubic),
+        label = "amber_glow"
+    )
+    val redGlow by animateFloatAsState(
+        targetValue = if (phase == FocusPhase.Distracted) 0.32f else 0f,
+        animationSpec = tween(700, easing = EaseInOutCubic),
+        label = "red_glow"
     )
 
-    val phaseLabel = when (phase) {
-        "FOCUSED" -> "Focused"
-        "GRACE" -> "Grace period"
-        else -> "Distracted"
-    }
-
-    val phaseEmoji = when (phase) {
-        "FOCUSED" -> "\uD83D\uDFE2"
-        "GRACE" -> "\uD83D\uDFE1"
-        else -> "\uD83D\uDD34"
-    }
-
-    // Pulse animation for distracted state
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (phase == "DISTRACTED") 1.03f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = EaseInOutCubic),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseScale"
-    )
+    val minutes = session.remainingSeconds / 60
+    val seconds = session.remainingSeconds % 60
+    val totalDuration = session.initialDurationSeconds.coerceAtLeast(session.remainingSeconds)
+    val progress = if (totalDuration > 0) 1f - (session.remainingSeconds.toFloat() / totalDuration) else 0f
+    val selectedBackground = focusBackgrounds.firstOrNull { it.id == appState.selectedFocusBackground } ?: focusBackgrounds.first()
 
     var showEndDialog by remember { mutableStateOf(false) }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Top bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Session",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surface
-            ) {
-                Text(
-                    "\u26A0 ${state.blacklistedApps.size} blocked",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontSize = 11.sp
-                )
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // Timer ring with score
-        Box(
-            contentAlignment = Alignment.Center,
+        Column(
             modifier = Modifier
-                .size(280.dp)
-                .scale(pulseScale)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
         ) {
-            // Draw dual rings: outer = timer progress, inner = confidence
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val strokeOuter = 14.dp.toPx()
-                val strokeInner = 6.dp.toPx()
-                val padding = strokeOuter / 2 + 4.dp.toPx()
+            SessionTopBar(blockedCount = session.blacklistedApps.size)
 
-                // Outer track
-                drawArc(
-                    color = Color(0xFF2A2F3C),
-                    startAngle = -90f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    topLeft = Offset(padding, padding),
-                    size = Size(size.width - padding * 2, size.height - padding * 2),
-                    style = Stroke(width = strokeOuter)
-                )
-                // Outer progress (primary color)
-                drawArc(
-                    color = EarnedColors.Primary,
-                    startAngle = -90f,
-                    sweepAngle = 360f * progress,
-                    useCenter = false,
-                    topLeft = Offset(padding, padding),
-                    size = Size(size.width - padding * 2, size.height - padding * 2),
-                    style = Stroke(width = strokeOuter, cap = StrokeCap.Round)
-                )
-
-                // Inner track
-                val innerPadding = padding + strokeOuter / 2 + 14.dp.toPx()
-                drawArc(
-                    color = Color(0xFF2A2F3C),
-                    startAngle = -90f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    topLeft = Offset(innerPadding, innerPadding),
-                    size = Size(size.width - innerPadding * 2, size.height - innerPadding * 2),
-                    style = Stroke(width = strokeInner)
-                )
-                // Inner confidence ring (phase-colored)
-                drawArc(
-                    color = phaseColor,
-                    startAngle = -90f,
-                    sweepAngle = 360f * confidence,
-                    useCenter = false,
-                    topLeft = Offset(innerPadding, innerPadding),
-                    size = Size(size.width - innerPadding * 2, size.height - innerPadding * 2),
-                    style = Stroke(width = strokeInner, cap = StrokeCap.Round)
-                )
-            }
-
-            // Center text
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "%02d:%02d".format(minutes, seconds),
-                    fontSize = 52.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    letterSpacing = 0.sp
-                )
-                Text(
-                    "$phaseEmoji $phaseLabel",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = phaseColor
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Confidence ${score.toInt()}%",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // Time penalty warning
-        if (phase == "DISTRACTED") {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "+2s per distracted second",
-                style = MaterialTheme.typography.labelSmall,
-                color = EarnedColors.Danger.copy(alpha = 0.8f)
+            FocusCompanionHero(
+                pet = appState.pet,
+                background = selectedBackground,
+                phase = phase,
+                phaseColor = phaseColor,
+                sceneDim = sceneDim,
+                amberGlow = amberGlow,
+                redGlow = redGlow,
+                timer = "%02d:%02d".format(minutes, seconds),
+                score = displayScore,
+                progress = progress,
             )
-        }
 
-        Spacer(Modifier.height(24.dp))
-
-        // Sensor fusion panel
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "ON-DEVICE SENSOR FUSION",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(12.dp))
-
-                SensorRow(
-                    emoji = "\uD83D\uDC64",
-                    label = "Face presence",
-                    value = if (score > 30) "Detected" else "Absent",
-                    ok = score > 30,
-                    confidence = if (score > 30) 0.92f else 0.15f
-                )
-                Spacer(Modifier.height(10.dp))
-                SensorRow(
-                    emoji = "\uD83E\uDE91",
-                    label = "Posture",
-                    value = if (score > 50) "Centered" else "Tilted",
-                    ok = score > 50,
-                    confidence = if (score > 50) 0.85f else 0.35f
-                )
-                Spacer(Modifier.height(10.dp))
-                SensorRow(
-                    emoji = "\uD83C\uDFA4",
-                    label = "Ambient audio (YamNet)",
-                    value = if (score > 60) "Quiet" else "Conversation",
-                    ok = score > 60,
-                    confidence = if (score > 60) 0.9f else 0.4f
-                )
-                Spacer(Modifier.height(10.dp))
-                SensorRow(
-                    emoji = "\uD83D\uDCF1",
-                    label = "Phone in frame (YOLO)",
-                    value = "Clear",
-                    ok = true,
-                    confidence = 0.95f
-                )
-                Spacer(Modifier.height(10.dp))
-                SensorRow(
-                    emoji = "\uD83E\uDDB6",
-                    label = "Eye openness (EAR)",
-                    value = if (score > 40) "Open" else "Closed",
-                    ok = score > 40,
-                    confidence = if (score > 40) 0.88f else 0.2f
-                )
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // NPU badge
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    Icons.Filled.Shield,
-                    contentDescription = null,
-                    tint = EarnedColors.Focus,
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    "NPU ON \u00B7 All inference on-device",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = EarnedColors.Focus.copy(alpha = 0.9f),
-                    fontSize = 11.sp
-                )
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // End session button
-        TextButton(onClick = {
-            haptics.tap()
-            showEndDialog = true
-        }) {
-            Icon(
-                Icons.Filled.Close,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            PhaseTestControls(
+                selectedPhase = phaseOverride,
+                mlPhase = mlPhase,
+                onSelected = { phaseOverride = it }
             )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                "End session early",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
 
-        Spacer(Modifier.height(32.dp))
+            BackgroundPicker(
+                selectedId = selectedBackground.id,
+                unlockedIds = appState.unlockedFocusBackgrounds,
+                bankedMinutes = appState.timeBankMinutes,
+                onSelect = EarnedItStore::selectFocusBackground,
+                onUnlock = { background ->
+                    EarnedItStore.unlockFocusBackground(background.id, background.costMinutes)
+                },
+            )
+
+            SessionControls(onEndSession = { showEndDialog = true })
+        }
     }
 
-    // End session confirmation dialog
     if (showEndDialog) {
         AlertDialog(
             onDismissRequest = { showEndDialog = false },
@@ -336,7 +215,6 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
             text = { Text("You'll forfeit any points for this session.") },
             confirmButton = {
                 TextButton(onClick = {
-                    haptics.confirm()
                     showEndDialog = false
                     SessionManager.stopSession()
                     onSessionEnd(true)
@@ -345,10 +223,7 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    haptics.tap()
-                    showEndDialog = false
-                }) {
+                TextButton(onClick = { showEndDialog = false }) {
                     Text("Keep going")
                 }
             }
@@ -357,55 +232,546 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
 }
 
 @Composable
-private fun SensorRow(
-    emoji: String,
-    label: String,
-    value: String,
-    ok: Boolean,
-    confidence: Float
-) {
-    val barColor = if (ok) EarnedColors.Focus else EarnedColors.Danger
-
+private fun SessionTopBar(blockedCount: Int) {
     Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(emoji, fontSize = 18.sp)
-        Column(modifier = Modifier.weight(1f)) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Icon(Icons.Filled.Shield, contentDescription = null, tint = EarnedColors.Primary, modifier = Modifier.size(16.dp))
+                Text("Session · $blockedCount blocked", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+        ) {
+            IconButton(onClick = { }) {
+                Icon(Icons.Filled.MoreHoriz, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FocusCompanionHero(
+    pet: PetProfile,
+    background: FocusBackground,
+    phase: FocusPhase,
+    phaseColor: Color,
+    sceneDim: Float,
+    amberGlow: Float,
+    redGlow: Float,
+    timer: String,
+    score: Int,
+    progress: Float,
+) {
+    val infinite = rememberInfiniteTransition(label = "companion_motion")
+    val lampPulse by infinite.animateFloat(
+        initialValue = 0.18f,
+        targetValue = 0.34f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2400, easing = EaseInOutCubic),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "lamp_pulse"
+    )
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(545.dp),
+        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+        color = Color.Black
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Crossfade(
+                targetState = heroSceneRes(pet.species, background.id, phase),
+                animationSpec = tween(850, easing = EaseInOutCubic),
+                label = "focus_scene_phase"
+            ) { sceneRes ->
+                Image(
+                    painter = painterResource(sceneRes),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = sceneDim))
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                EarnedColors.Warning.copy(alpha = lampPulse + amberGlow),
+                                Color.Transparent
+                            ),
+                            center = Offset(95f, 355f),
+                            radius = 420f
+                        )
+                    )
+            )
+            if (redGlow > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(Color.Transparent, EarnedColors.Danger.copy(alpha = redGlow)),
+                                radius = 760f
+                            )
+                        )
+                )
+            }
+
+            TimerRing(
+                progress = progress,
+                color = phaseColor,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 20.dp)
+                    .size(245.dp)
+            )
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 86.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    timer,
+                    color = Color.White,
+                    fontSize = 58.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.sp
+                )
+                Surface(shape = RoundedCornerShape(18.dp), color = phaseColor) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Filled.Spa, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                        Text("${phaseLabel(phase)} · $score%", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(7.dp))
+                Text("ML tracking active · on-device", color = Color.White.copy(alpha = 0.82f), fontSize = 11.sp)
+                if (phase != FocusPhase.Focused) {
+                    Spacer(Modifier.height(9.dp))
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color.Black.copy(alpha = 0.42f),
+                        border = BorderStroke(1.dp, phaseColor.copy(alpha = 0.45f))
+                    ) {
+                        Text(
+                            text = phaseMessage(phase),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            PhaseStrip(
+                phase = phase,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 13.dp, vertical = 18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimerRing(progress: Float, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 5.dp.toPx()
+        val padding = stroke / 2
+        drawArc(
+            color = Color.White.copy(alpha = 0.22f),
+            startAngle = -210f,
+            sweepAngle = 300f,
+            useCenter = false,
+            topLeft = Offset(padding, padding),
+            size = Size(size.width - padding * 2, size.height - padding * 2),
+            style = Stroke(width = stroke, cap = StrokeCap.Round)
+        )
+        drawArc(
+            color = color,
+            startAngle = -210f,
+            sweepAngle = 300f * progress.coerceIn(0f, 1f),
+            useCenter = false,
+            topLeft = Offset(padding, padding),
+            size = Size(size.width - padding * 2, size.height - padding * 2),
+            style = Stroke(width = stroke, cap = StrokeCap.Round)
+        )
+    }
+}
+
+@Composable
+private fun PhaseStrip(phase: FocusPhase, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = Color.Black.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            PhaseHint(
+                icon = Icons.Filled.Spa,
+                title = "Focused",
+                subtitle = "You're in the zone!",
+                color = EarnedColors.Focus,
+                active = phase == FocusPhase.Focused,
+                modifier = Modifier.weight(1f)
+            )
+            PhaseHint(
+                icon = Icons.Filled.Headphones,
+                title = "Refocus",
+                subtitle = "Stay with it.",
+                color = EarnedColors.Warning,
+                active = phase == FocusPhase.Refocus,
+                modifier = Modifier.weight(1f)
+            )
+            PhaseHint(
+                icon = Icons.Filled.Close,
+                title = "Distracted",
+                subtitle = "Let's get back.",
+                color = EarnedColors.Danger,
+                active = phase == FocusPhase.Distracted,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PhaseHint(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    color: Color,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.alpha(if (active) 1f else 0.72f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+        Column {
+            Text(title, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = Color.White.copy(alpha = 0.78f), fontSize = 8.sp, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun PhaseTestControls(
+    selectedPhase: FocusPhase?,
+    mlPhase: FocusPhase,
+    onSelected: (FocusPhase?) -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 12.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Text("ML state preview", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    label,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontSize = 12.sp
-                )
-                Text(
-                    value,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontSize = 10.sp,
-                    color = barColor
+                    "Auto: ${phaseLabel(mlPhase)}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(Modifier.height(4.dp))
-            // Confidence bar
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(MaterialTheme.colorScheme.background)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(confidence)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(barColor)
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PhasePreviewChip(
+                    label = "Auto",
+                    selected = selectedPhase == null,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    onClick = { onSelected(null) },
+                    modifier = Modifier.weight(1f)
+                )
+                PhasePreviewChip(
+                    label = "Focused",
+                    selected = selectedPhase == FocusPhase.Focused,
+                    color = EarnedColors.Focus,
+                    onClick = { onSelected(FocusPhase.Focused) },
+                    modifier = Modifier.weight(1f)
+                )
+                PhasePreviewChip(
+                    label = "Refocus",
+                    selected = selectedPhase == FocusPhase.Refocus,
+                    color = EarnedColors.Warning,
+                    onClick = { onSelected(FocusPhase.Refocus) },
+                    modifier = Modifier.weight(1f)
+                )
+                PhasePreviewChip(
+                    label = "Distracted",
+                    selected = selectedPhase == FocusPhase.Distracted,
+                    color = EarnedColors.Danger,
+                    onClick = { onSelected(FocusPhase.Distracted) },
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
     }
 }
+
+@Composable
+private fun PhasePreviewChip(
+    label: String,
+    selected: Boolean,
+    color: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .height(36.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) color.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) color else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+        )
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                label,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (selected) color else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun BackgroundPicker(
+    selectedId: String,
+    unlockedIds: List<String>,
+    bankedMinutes: Int,
+    onSelect: (String) -> Unit,
+    onUnlock: (FocusBackground) -> PurchaseResult,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 14.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 2.dp
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Background", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Choose your focus space", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                }
+                Surface(shape = RoundedCornerShape(14.dp), color = EarnedColors.Focus.copy(alpha = 0.1f)) {
+                    Text(
+                        "$bankedMinutes",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        color = EarnedColors.Focus,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(13.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                focusBackgrounds.forEach { background ->
+                    val unlocked = background.id in unlockedIds
+                    val selected = background.id == selectedId
+                    FocusBackgroundCard(
+                        background = background,
+                        selected = selected,
+                        unlocked = unlocked,
+                        bankedMinutes = bankedMinutes,
+                        onClick = {
+                            if (unlocked) onSelect(background.id) else onUnlock(background)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FocusBackgroundCard(
+    background: FocusBackground,
+    selected: Boolean,
+    unlocked: Boolean,
+    bankedMinutes: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.clickable(enabled = unlocked || bankedMinutes >= background.costMinutes, onClick = onClick),
+        shape = RoundedCornerShape(13.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) EarnedColors.Focus else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(6.dp)) {
+            Box {
+                Image(
+                    painter = painterResource(background.imageRes),
+                    contentDescription = background.title,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(78.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .alpha(if (unlocked) 1f else 0.55f),
+                    contentScale = ContentScale.Crop
+                )
+                if (selected) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(5.dp)
+                            .size(28.dp),
+                        shape = CircleShape,
+                        color = EarnedColors.Focus
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(background.title, modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                if (!unlocked) {
+                    Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(3.dp))
+                    Text("${background.costMinutes} min", fontSize = 10.sp, color = EarnedColors.Focus, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionControls(onEndSession: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            IconButton(onClick = { SessionManager.pauseSession() }) {
+                Icon(Icons.Filled.Pause, contentDescription = null)
+            }
+        }
+        Button(
+            onClick = onEndSession,
+            modifier = Modifier
+                .weight(1f)
+                .height(58.dp),
+            shape = RoundedCornerShape(22.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = EarnedColors.Primary, contentColor = Color.White)
+        ) {
+            Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("End Session", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        }
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            IconButton(onClick = { }) {
+                Icon(Icons.Filled.GraphicEq, contentDescription = null)
+            }
+        }
+    }
+}
+
+@DrawableRes
+private fun heroSceneRes(species: String, backgroundId: String, phase: FocusPhase): Int =
+    when (species) {
+        "owly" -> if (backgroundId == "balcony_night") {
+            R.drawable.focus_scene_owly_balcony_night
+        } else {
+            R.drawable.focus_scene_owly_cozy_desk
+        }
+        "lumi" -> if (backgroundId == "balcony_night") {
+            R.drawable.focus_scene_lumi_balcony_night
+        } else {
+            R.drawable.focus_scene_lumi_cozy_desk
+        }
+        else -> if (backgroundId == "balcony_night") {
+            R.drawable.focus_scene_kitsu_balcony_night
+        } else {
+            when (phase) {
+                FocusPhase.Focused -> R.drawable.focus_scene_kitsu_cozy_desk
+                FocusPhase.Refocus -> R.drawable.focus_scene_kitsu_cozy_desk_refocus
+                FocusPhase.Distracted -> R.drawable.focus_scene_kitsu_cozy_desk_distracted
+            }
+        }
+    }
+
+private fun phaseLabel(phase: FocusPhase): String =
+    when (phase) {
+        FocusPhase.Focused -> "Focused"
+        FocusPhase.Refocus -> "Refocus"
+        FocusPhase.Distracted -> "Distracted"
+    }
+
+private fun phaseMessage(phase: FocusPhase): String =
+    when (phase) {
+        FocusPhase.Focused -> "Progress earning normally"
+        FocusPhase.Refocus -> "Refocus now to keep progress smooth"
+        FocusPhase.Distracted -> "+2s penalty while distracted"
+    }
