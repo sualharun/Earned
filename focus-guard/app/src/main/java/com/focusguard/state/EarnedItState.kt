@@ -505,8 +505,18 @@ object EarnedItStore {
             }
         } else {
             mutate { state ->
-                state.copy(settings = state.settings.copy(demoModeEnabled = false))
-                    .withPrivacyEvent("settings", "Demo mode disabled", "Kept existing local data and stopped demo reseeding.")
+                EarnedItUiState(
+                    onboardingComplete = true,
+                    loaded = true,
+                    permissions = state.permissions,
+                    settings = AppSettings(
+                        notificationsEnabled = state.settings.notificationsEnabled,
+                        hapticsEnabled = state.settings.hapticsEnabled,
+                        strictBlockingEnabled = state.settings.strictBlockingEnabled,
+                        demoModeEnabled = false
+                    ),
+                    profile = state.profile,
+                ).withPrivacyEvent("settings", "Demo mode disabled", "Reset to fresh state.")
             }
         }
     }
@@ -550,50 +560,116 @@ enum class PurchaseResult {
 
 fun seedDemoState(): EarnedItUiState {
     val now = System.currentTimeMillis()
-    // Points: 10 × minutes × score/100
-    // 45×10×91/100=409, 25×10×84/100=210, 50×10×94/100=470, 90×10×89/100=801,
-    // 60×10×96/100=576, 120×10×93/100=1116, 90×10×88/100=792, 60×10×95/100=570,
-    // 60×10×90/100=540, 30×10×87/100=261  → Total: 5,745 pts (before spending)
+    val day = 86_400_000L
+    val hour = 3_600_000L
+
+    // Helper to create a session at a given day offset + hour offset with realistic data
+    fun s(daysAgo: Int, hourOfDay: Int, mins: Int, score: Int, distractions: Int, apps: List<String>): FocusSessionSummary {
+        val end = now - daysAgo * day + hourOfDay * hour
+        val start = end - mins * 60_000L
+        val pts = mins * 10 * score / 100
+        val bank = (mins / 5).coerceAtLeast(1)
+        return FocusSessionSummary(
+            id = end, durationMinutes = mins, focusScore = score,
+            success = true, pointsEarned = pts, distractionCount = distractions,
+            startTimeMs = start, endTimeMs = end, plannedDurationMinutes = mins,
+            endedEarly = false, blockedApps = apps, timeBankMinutesEarned = bank,
+            recoverySeconds = if (distractions == 0) 0 else 35 + distractions * 12
+        )
+    }
+
+    // 30 sessions across 28 days — spread across different times of day for rich insights
     val sessions = listOf(
-        FocusSessionSummary(now - 3_600_000L, 45, 91, true, 409, 1, now - 6_300_000L, now - 3_600_000L, 45, false, listOf("Instagram"), 9, 42),
-        FocusSessionSummary(now - 86_400_000L, 25, 84, true, 210, 2, now - 87_900_000L, now - 86_400_000L, 25, false, listOf("TikTok"), 5, 58),
-        FocusSessionSummary(now - 172_800_000L, 50, 94, true, 470, 0, now - 175_800_000L, now - 172_800_000L, 50, false, listOf("YouTube"), 10, 0),
-        FocusSessionSummary(now - 259_200_000L, 90, 89, true, 801, 1, now - 264_600_000L, now - 259_200_000L, 90, false, listOf("Instagram", "Discord"), 18, 28),
-        FocusSessionSummary(now - 345_600_000L, 60, 96, true, 576, 0, now - 349_200_000L, now - 345_600_000L, 60, false, listOf("TikTok"), 12, 0),
-        FocusSessionSummary(now - 432_000_000L, 120, 93, true, 1116, 0, now - 439_200_000L, now - 432_000_000L, 120, false, listOf("Instagram", "TikTok"), 24, 0),
-        FocusSessionSummary(now - 518_400_000L, 90, 88, true, 792, 1, now - 523_800_000L, now - 518_400_000L, 90, false, listOf("YouTube", "Discord"), 18, 35),
-        FocusSessionSummary(now - 604_800_000L, 60, 95, true, 570, 0, now - 608_400_000L, now - 604_800_000L, 60, false, listOf("Instagram"), 12, 0),
-        FocusSessionSummary(now - 691_200_000L, 60, 90, true, 540, 1, now - 694_800_000L, now - 691_200_000L, 60, false, listOf("TikTok"), 12, 24),
-        FocusSessionSummary(now - 777_600_000L, 30, 87, true, 261, 0, now - 779_400_000L, now - 777_600_000L, 30, false, listOf("YouTube"), 6, 0),
+        // Today
+        s(0, 10, 45, 93, 0, listOf("Instagram")),
+        s(0, 15, 30, 88, 1, listOf("TikTok")),
+        // Yesterday
+        s(1, 9, 60, 91, 0, listOf("Instagram", "TikTok")),
+        s(1, 16, 25, 85, 2, listOf("YouTube")),
+        // Day 2
+        s(2, 14, 50, 94, 0, listOf("TikTok")),
+        // Day 3
+        s(3, 11, 90, 89, 1, listOf("Instagram", "Discord")),
+        s(3, 20, 30, 82, 0, listOf("YouTube")),
+        // Day 4
+        s(4, 8, 60, 96, 0, listOf("TikTok")),
+        // Day 5
+        s(5, 13, 45, 87, 1, listOf("Instagram")),
+        s(5, 19, 30, 91, 0, listOf("Snapchat")),
+        // Day 6
+        s(6, 10, 120, 93, 0, listOf("Instagram", "TikTok")),
+        // Day 7
+        s(7, 15, 60, 90, 1, listOf("YouTube", "Discord")),
+        s(7, 21, 25, 84, 0, listOf("TikTok")),
+        // Day 8
+        s(8, 9, 45, 95, 0, listOf("Instagram")),
+        // Day 10
+        s(10, 14, 90, 88, 2, listOf("YouTube", "Netflix")),
+        // Day 11
+        s(11, 11, 60, 92, 0, listOf("TikTok")),
+        s(11, 17, 30, 86, 1, listOf("Instagram")),
+        // Day 13
+        s(13, 10, 50, 94, 0, listOf("Discord")),
+        // Day 14
+        s(14, 16, 45, 90, 0, listOf("Instagram", "TikTok")),
+        // Day 16
+        s(16, 8, 60, 91, 1, listOf("YouTube")),
+        // Day 18
+        s(18, 13, 90, 87, 0, listOf("TikTok", "Snapchat")),
+        s(18, 20, 30, 83, 2, listOf("Instagram")),
+        // Day 20
+        s(20, 11, 120, 95, 0, listOf("Instagram", "TikTok")),
+        // Day 22
+        s(22, 15, 45, 89, 1, listOf("YouTube")),
+        // Day 24
+        s(24, 9, 60, 93, 0, listOf("TikTok")),
+        s(24, 18, 30, 86, 0, listOf("Discord")),
+        // Day 26
+        s(26, 14, 50, 91, 0, listOf("Instagram")),
+        // Day 27
+        s(27, 10, 45, 88, 1, listOf("YouTube", "TikTok")),
+        // Day 28
+        s(28, 16, 60, 94, 0, listOf("Instagram")),
+        s(28, 21, 25, 82, 0, listOf("Snapchat")),
     )
-    // 5,745 earned - 300 (Lumi scarf) - 1000 (Owly unlock) - 2500 (Lumi unlock) = 1,945 balance
+
+    // Total earned from sessions
+    val totalEarned = sessions.sumOf { it.pointsEarned }
+    // Spend: Owly 1000 + Lumi 2500 + Lumi scarf 300 + Kitsu bandana 400 = 4,200
+    val spent = 4_200
+    val balance = totalEarned - spent
+
     return EarnedItUiState(
         onboardingComplete = true,
         profile = UserProfile("Sanjiv", "sual", "00000000-0000-4000-8000-000000000001"),
-        points = 1_945,
-        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 3, fullness = 92, mood = "Energized", equippedCosmetic = "Lumi scarf"),
-        unlockedPetSpecies = listOf("kitsu", "lumi", "owly"),
+        points = balance,
+        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 3, fullness = 96, mood = "Energized", equippedCosmetic = "Kitsu bandana"),
+        unlockedPetSpecies = listOf("kitsu", "owly", "lumi"),
         unlockedFocusBackgrounds = listOf("cozy_desk", "balcony_night"),
         selectedFocusBackground = "cozy_desk",
         allSessions = sessions,
         timeBankTransactions = listOf(
-            TimeBankTransaction(now - 3_600_000L, "earn", 9, "+9m earned", "45 minute session at 91% focus.", now - 3_600_000L),
-            TimeBankTransaction(now - 5_400_000L, "redeem", -15, "-15m reserved", "YouTube reward pass after homework.", now - 5_400_000L, "YouTube"),
-            TimeBankTransaction(now - 86_400_000L, "earn", 5, "+5m earned", "25 minute session at 84% focus.", now - 86_400_000L),
-            TimeBankTransaction(now - 259_200_000L, "earn", 18, "+18m earned", "90 minute session at 89% focus.", now - 259_200_000L),
-            TimeBankTransaction(now - 345_600_000L, "earn", 12, "+12m earned", "60 minute session at 96% focus.", now - 345_600_000L),
-            TimeBankTransaction(now - 604_800_000L, "earn", 60, "+60m demo grant", "Demo balance for reward redemption.", now - 604_800_000L)
+            TimeBankTransaction(now - 1 * hour, "earn", 9, "+9m earned", "45 minute session at 93% focus.", now - 1 * hour),
+            TimeBankTransaction(now - 2 * hour, "earn", 6, "+6m earned", "30 minute session at 88% focus.", now - 2 * hour),
+            TimeBankTransaction(now - 3 * hour, "redeem", -20, "-20m reserved", "YouTube reward pass.", now - 3 * hour, "YouTube"),
+            TimeBankTransaction(now - 1 * day, "earn", 12, "+12m earned", "60 minute session at 91% focus.", now - 1 * day),
+            TimeBankTransaction(now - 1 * day - 2 * hour, "earn", 5, "+5m earned", "25 minute session at 85% focus.", now - 1 * day - 2 * hour),
+            TimeBankTransaction(now - 6 * day, "earn", 24, "+24m earned", "120 minute session at 93% focus.", now - 6 * day),
+            TimeBankTransaction(now - 20 * day, "earn", 24, "+24m earned", "120 minute session at 95% focus.", now - 20 * day),
         ),
-        storePurchases = listOf(StorePurchase(now - 120_000L, "lumi_scarf", "Lumi scarf", "Pet", 300, now - 120_000L, true)),
+        storePurchases = listOf(
+            StorePurchase(now - 2 * day, "kitsu_bandana", "Kitsu bandana", "Pet", 400, now - 2 * day, true),
+            StorePurchase(now - 10 * day, "lumi_scarf", "Lumi scarf", "Pet", 300, now - 10 * day, false),
+        ),
         scheduledBlocks = listOf(
-            ScheduledFocusBlock(now + 1_800_000L, "Focus block", now + 1_800_000L, 25, listOf("Instagram", "TikTok")),
-            ScheduledFocusBlock(now + 86_400_000L, "Algorithms set", now + 86_400_000L, 50, listOf("YouTube", "Discord"))
+            ScheduledFocusBlock(now + 1 * hour, "Study block", now + 1 * hour, 45, listOf("Instagram", "TikTok")),
+            ScheduledFocusBlock(now + 1 * day, "Algorithms review", now + 1 * day, 60, listOf("YouTube", "Discord"))
         ),
         privacyEvents = listOf(
-            PrivacyEvent(now - 60_000L, "session", "Attention score calculated", "91% focus score saved locally.", now - 60_000L),
+            PrivacyEvent(now - 60_000L, "session", "Attention score calculated", "93% focus score saved locally.", now - 60_000L),
             PrivacyEvent(now - 120_000L, "reward", "Reward app check", "TikTok blocked during focus.", now - 120_000L)
         ),
-        deskAudit = DeskAuditSummary(87, 92, 64, 38, 84, now - 600_000L),
+        deskAudit = DeskAuditSummary(91, 95, 78, 42, 88, now - 600_000L),
         settings = AppSettings(demoModeEnabled = true),
         loaded = true
     )

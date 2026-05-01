@@ -127,10 +127,13 @@ fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
             })
         }
         item {
-            LoadDemoButton(onClick = {
-                haptics.confirm()
-                EarnedItStore.resetDemoData()
-            })
+            DemoModeToggle(
+                isDemoMode = uiState.settings.demoModeEnabled,
+                onToggle = {
+                    haptics.confirm()
+                    EarnedItStore.setDemoMode(!uiState.settings.demoModeEnabled)
+                }
+            )
         }
     }
 }
@@ -651,24 +654,24 @@ private fun FooterChip() {
 }
 
 @Composable
-private fun LoadDemoButton(onClick: () -> Unit) {
+private fun DemoModeToggle(isDemoMode: Boolean, onToggle: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center
     ) {
         Surface(
             modifier = Modifier
-                .clickable(onClick = onClick)
+                .clickable(onClick = onToggle)
                 .padding(4.dp),
             shape = RoundedCornerShape(12.dp),
-            color = EarnedColors.Primary.copy(alpha = 0.10f)
+            color = if (isDemoMode) EarnedColors.Warning.copy(alpha = 0.12f) else EarnedColors.Primary.copy(alpha = 0.10f)
         ) {
             Text(
-                "Load demo data",
+                if (isDemoMode) "Unload demo data" else "Load demo data",
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = EarnedColors.Primary
+                color = if (isDemoMode) EarnedColors.Warning else EarnedColors.Primary
             )
         }
     }
