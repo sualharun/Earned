@@ -1,6 +1,7 @@
 package com.focusguard.social
 
 import com.focusguard.BuildConfig
+import com.focusguard.state.DemoSocialProfileId
 import com.focusguard.state.EarnedItUiState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -57,11 +58,12 @@ class SupabaseSocialRepository {
     suspend fun loadSnapshot(appState: EarnedItUiState): Result<SocialSnapshot> = withContext(Dispatchers.IO) {
         runCatching {
             requireConfigured()
+            val profileId = appState.socialProfileId()
             val me = upsertProfile(appState)
-            val requests = fetchRequests(appState.profile.id)
+            val requests = fetchRequests(profileId)
             val profileIds = requests
                 .flatMap { listOf(it.requesterId, it.addresseeId) }
-                .plus(appState.profile.id)
+                .plus(profileId)
                 .distinct()
             val profiles = fetchProfiles(profileIds).associateBy { it.id } + (me.id to me)
             val enriched = requests.map {
@@ -73,7 +75,7 @@ class SupabaseSocialRepository {
             val friends = enriched
                 .filter { it.status == "accepted" }
                 .mapNotNull { request ->
-                    val friendId = if (request.requesterId == appState.profile.id) request.addresseeId else request.requesterId
+                    val friendId = if (request.requesterId == profileId) request.addresseeId else request.requesterId
                     profiles[friendId]
                 }
                 .distinctBy { it.id }
@@ -86,8 +88,8 @@ class SupabaseSocialRepository {
                 me = me,
                 leaderboard = leaderboard,
                 friends = friends,
-                incomingRequests = enriched.filter { it.status == "pending" && it.addresseeId == appState.profile.id },
-                outgoingRequests = enriched.filter { it.status == "pending" && it.requesterId == appState.profile.id },
+                incomingRequests = enriched.filter { it.status == "pending" && it.addresseeId == profileId },
+                outgoingRequests = enriched.filter { it.status == "pending" && it.requesterId == profileId },
             )
         }
     }
@@ -95,21 +97,22 @@ class SupabaseSocialRepository {
     suspend fun sendFriendRequest(appState: EarnedItUiState, rawUsername: String): SocialActionResult = withContext(Dispatchers.IO) {
         runCatching {
             requireConfigured()
+            val profileId = appState.socialProfileId()
             upsertProfile(appState)
             val username = normalizeUsername(rawUsername)
             if (username.isBlank()) return@withContext SocialActionResult.UserNotFound
 
             val target = fetchProfileByUsername(username) ?: return@withContext SocialActionResult.UserNotFound
-            if (target.id == appState.profile.id) return@withContext SocialActionResult.CannotAddSelf
+            if (target.id == profileId) return@withContext SocialActionResult.CannotAddSelf
 
-            val existing = fetchRequests(appState.profile.id).firstOrNull {
-                (it.requesterId == appState.profile.id && it.addresseeId == target.id) ||
-                    (it.requesterId == target.id && it.addresseeId == appState.profile.id)
+            val existing = fetchRequests(profileId).firstOrNull {
+                (it.requesterId == profileId && it.addresseeId == target.id) ||
+                    (it.requesterId == target.id && it.addresseeId == profileId)
             }
             when (existing?.status) {
                 "accepted" -> return@withContext SocialActionResult.AlreadyConnected
                 "pending" -> {
-                    if (existing.addresseeId == appState.profile.id) {
+                    if (existing.addresseeId == profileId) {
                         updateRequest(existing.id, "accepted")
                         return@withContext SocialActionResult.Success
                     }
@@ -118,7 +121,7 @@ class SupabaseSocialRepository {
             }
 
             val body = JSONObject()
-                .put("requester_id", appState.profile.id)
+                .put("requester_id", profileId)
                 .put("addressee_id", target.id)
                 .put("status", "pending")
             request("POST", "/rest/v1/social_friend_requests", body, prefer = "return=minimal")
@@ -144,7 +147,7 @@ class SupabaseSocialRepository {
 
     private fun upsertProfile(appState: EarnedItUiState): SocialProfile {
         val profile = SocialProfile(
-            id = appState.profile.id,
+            id = appState.socialProfileId(),
             username = normalizeUsername(appState.profile.username),
             displayName = appState.profile.displayName,
             petSpecies = appState.pet.species,
@@ -181,17 +184,17 @@ class SupabaseSocialRepository {
 
     private fun fetchProfiles(ids: List<String>): List<SocialProfile> {
         if (ids.isEmpty()) return emptyList()
-        val inList = ids.distinct().joinToString(",")
+        val inList = ids.distinct().joinToString(",") { it.encodeUrl() }
         return request(
             method = "GET",
-            path = "/rest/v1/social_profiles?id=in.(${inList.encodeUrl(keepComma = true)})&select=*",
+            path = "/rest/v1/social_profiles?id=in.($inList)&select=*",
         ).asArray().objects().map { it.toProfile() }
     }
 
     private fun fetchRequests(userId: String): List<SocialFriendRequest> =
         request(
             method = "GET",
-            path = "/rest/v1/social_friend_requests?or=(requester_id.eq.${userId},addressee_id.eq.${userId})&status=in.(pending,accepted)&select=*&order=created_at.desc",
+            path = "/rest/v1/social_friend_requests?or=(requester_id.eq.${userId.encodeUrl()},addressee_id.eq.${userId.encodeUrl()})&status=in.(pending,accepted)&select=*&order=created_at.desc",
         ).asArray().objects().map { it.toFriendRequest() }
 
     private fun updateRequest(requestId: String, status: String) {
@@ -237,6 +240,9 @@ class SupabaseSocialRepository {
 
 fun normalizeUsername(value: String): String =
     value.trim().lowercase(Locale.US).replace(Regex("[^a-z0-9_\\.]"), "").take(24)
+
+fun EarnedItUiState.socialProfileId(): String =
+    if (settings.demoModeEnabled) DemoSocialProfileId else profile.id
 
 private fun String.encodeUrl(keepComma: Boolean = false): String {
     val encoded = URLEncoder.encode(this, "UTF-8").replace("+", "%20")

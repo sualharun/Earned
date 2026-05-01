@@ -66,6 +66,7 @@ import com.focusguard.social.SocialProfile
 import com.focusguard.social.SocialSnapshot
 import com.focusguard.social.SupabaseSocialRepository
 import com.focusguard.social.normalizeUsername
+import com.focusguard.social.socialProfileId
 import com.focusguard.state.EarnedItStore
 import com.focusguard.state.PetProfile
 import com.focusguard.ui.theme.EarnedColors
@@ -77,6 +78,7 @@ fun SocialScreen() {
     val repository = remember { SupabaseSocialRepository() }
     val scope = rememberCoroutineScope()
     val haptics = rememberHaptics()
+    val socialProfileId = appState.socialProfileId()
 
     var snapshot by remember { mutableStateOf<SocialSnapshot?>(null) }
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -103,7 +105,7 @@ fun SocialScreen() {
     }
 
     LaunchedEffect(
-        appState.profile.id,
+        socialProfileId,
         appState.profile.username,
         appState.points,
         appState.weeklyFocusMinutes,
@@ -154,7 +156,7 @@ fun SocialScreen() {
             SocialProfileCard(
                 username = profileUsername,
                 displayName = appState.profile.displayName,
-                userId = appState.profile.id,
+                userId = socialProfileId,
                 onUsernameChange = { profileUsername = it },
                 onSave = {
                     haptics.confirm()
@@ -177,7 +179,7 @@ fun SocialScreen() {
 
         item {
             val leaderboard = snapshot?.leaderboard.orEmpty()
-            val myRank = leaderboard.indexOfFirst { it.id == appState.profile.id }.takeIf { it >= 0 }?.plus(1)
+            val myRank = leaderboard.indexOfFirst { it.id == socialProfileId }.takeIf { it >= 0 }?.plus(1)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SocialKpiCard(
                     label = "Your rank",
@@ -208,7 +210,7 @@ fun SocialScreen() {
                     LeaderboardProfileRow(
                         rank = rows.indexOf(profile) + 1,
                         profile = profile,
-                        isMe = profile.id == appState.profile.id
+                        isMe = profile.id == socialProfileId
                     )
                 }
             }

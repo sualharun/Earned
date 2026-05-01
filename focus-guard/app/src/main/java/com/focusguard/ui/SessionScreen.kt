@@ -83,6 +83,7 @@ import com.focusguard.session.SessionPhase
 import com.focusguard.state.EarnedItStore
 import com.focusguard.state.PetProfile
 import com.focusguard.ui.theme.EarnedColors
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private enum class FocusPhase {
@@ -122,7 +123,12 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
         else -> FocusPhase.Distracted
     }
     val phase = mlPhase
-    val displayScore = mlScore.toInt()
+    val animatedDisplayScore by animateFloatAsState(
+        targetValue = mlScore,
+        animationSpec = tween(950, easing = EaseInOutCubic),
+        label = "display_score"
+    )
+    val displayScore = animatedDisplayScore.roundToInt().coerceIn(0, 100)
     val phaseColor by animateColorAsState(
         targetValue = when (phase) {
             FocusPhase.Focused -> EarnedColors.Focus

@@ -33,6 +33,7 @@ private val Context.earnedItDataStore by preferencesDataStore("earnedit_state")
 private val stateJsonKey = stringPreferencesKey("state_json_v1")
 private const val InitialPetFullness = 50
 private const val InitialPetMood = "Ready"
+const val DemoSocialProfileId = "fc46b8c9-3ec2-4f17-82bf-5413428d2aeb"
 
 data class PetProfile(
     val name: String = "Kitsu",
@@ -653,7 +654,7 @@ fun seedDemoState(): EarnedItUiState {
 
     return EarnedItUiState(
         onboardingComplete = true,
-        profile = UserProfile("Sanjiv", "sual", "00000000-0000-4000-8000-000000000001"),
+        profile = UserProfile("Sanjiv", "sual", DemoSocialProfileId),
         points = balance,
         pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 5, fullness = 96, mood = "Energized", equippedCosmetic = "Kitsu bandana"),
         unlockedPetSpecies = listOf("kitsu", "owly", "lumi"),
@@ -718,7 +719,11 @@ private fun EarnedItUiState.withNormalizedPetStage(): EarnedItUiState =
     copy(pet = pet.copy(stage = pet.stage.coerceIn(1, 5)))
 
 private fun EarnedItUiState.withStableUserIdentity(): EarnedItUiState {
-    val id = profile.id.ifBlank { UUID.randomUUID().toString() }
+    val id = when {
+        settings.demoModeEnabled -> DemoSocialProfileId
+        profile.id == "00000000-0000-4000-8000-000000000001" -> DemoSocialProfileId
+        else -> profile.id.ifBlank { UUID.randomUUID().toString() }
+    }
     val username = profile.username.ifBlank { "focus_${id.take(8)}" }
     return copy(profile = profile.copy(id = id, username = username))
 }
