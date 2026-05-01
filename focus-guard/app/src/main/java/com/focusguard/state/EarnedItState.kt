@@ -219,6 +219,22 @@ object EarnedItStore {
         mutate { it.copy(onboardingComplete = true).withPrivacyEvent("settings", "Onboarding complete", "Initial local profile created.") }
     }
 
+    fun completeOnboarding(species: String, name: String) {
+        mutate { state ->
+            state.copy(
+                onboardingComplete = true,
+                pet = state.pet.copy(
+                    species = species,
+                    name = name.ifBlank { species.replaceFirstChar { c -> c.uppercase() } },
+                    stage = 1,
+                    fullness = InitialPetFullness,
+                    mood = InitialPetMood,
+                    lastFedMs = 0L,
+                )
+            ).withPrivacyEvent("settings", "Onboarding complete", "Initial local profile created.")
+        }
+    }
+
     fun pickPet(species: String, name: String) {
         mutate { state ->
             state.copy(
