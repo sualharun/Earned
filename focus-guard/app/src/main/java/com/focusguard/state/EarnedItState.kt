@@ -30,13 +30,15 @@ import kotlin.math.roundToInt
 
 private val Context.earnedItDataStore by preferencesDataStore("earnedit_state")
 private val stateJsonKey = stringPreferencesKey("state_json_v1")
+private const val InitialPetFullness = 50
+private const val InitialPetMood = "Ready"
 
 data class PetProfile(
     val name: String = "Kitsu",
     val species: String = "kitsu",
     val stage: Int = 1,
-    val fullness: Int = 84,
-    val mood: String = "Happy",
+    val fullness: Int = InitialPetFullness,
+    val mood: String = InitialPetMood,
     val lastFedMs: Long = 0L,
     val equippedCosmetic: String = ""
 )
@@ -191,7 +193,11 @@ object EarnedItStore {
                     _state.value = if (stored.isNullOrBlank()) {
                         EarnedItUiState(loaded = true, permissions = readPermissions(context.applicationContext))
                     } else {
-                        runCatching { EarnedItJson.decode(stored).copy(loaded = true, permissions = readPermissions(context.applicationContext)) }
+                        runCatching {
+                            EarnedItJson.decode(stored)
+                                .withFreshPetBaseline()
+                                .copy(loaded = true, permissions = readPermissions(context.applicationContext))
+                        }
                             .getOrElse { EarnedItUiState(loaded = true, permissions = readPermissions(context.applicationContext)) }
                     }
                 }
@@ -213,8 +219,10 @@ object EarnedItStore {
                     species = species,
                     name = name.ifBlank { species.replaceFirstChar { c -> c.uppercase() } },
                     stage = 1,
-                    fullness = 84,
-                    mood = "Happy"
+                    fullness = InitialPetFullness,
+                    mood = InitialPetMood,
+                    lastFedMs = 0L,
+                    equippedCosmetic = ""
                 )
             ).withPrivacyEvent("pet", "Pet selected", "Your local pet profile was updated.")
         }
@@ -455,6 +463,26 @@ private fun EarnedItUiState.withPrivacyEvent(type: String, title: String, detail
     )
 }
 
+private fun EarnedItUiState.withFreshPetBaseline(): EarnedItUiState {
+    val hasProgress = points > 0 ||
+        allSessions.isNotEmpty() ||
+        timeBankTransactions.isNotEmpty() ||
+        storePurchases.isNotEmpty() ||
+        pet.lastFedMs > 0L ||
+        pet.stage > 1 ||
+        pet.equippedCosmetic.isNotBlank()
+
+    val looksLikeOldFreshPet = !hasProgress &&
+        pet.fullness == 84 &&
+        pet.mood == "Happy"
+
+    return if (looksLikeOldFreshPet) {
+        copy(pet = pet.copy(fullness = InitialPetFullness, mood = InitialPetMood))
+    } else {
+        this
+    }
+}
+
 private fun calculateStreakDays(sessions: List<FocusSessionSummary>): Int {
     val successDays = sessions.filter { it.success }
         .map { Instant.ofEpochMilli(it.startTimeMs).atZone(ZoneId.systemDefault()).toLocalDate() }
@@ -556,8 +584,8 @@ private object EarnedItJson {
         name = json?.optString("name", "Kitsu") ?: "Kitsu",
         species = json?.optString("species", "kitsu") ?: "kitsu",
         stage = json?.optInt("stage", 1) ?: 1,
-        fullness = json?.optInt("fullness", 84) ?: 84,
-        mood = json?.optString("mood", "Happy") ?: "Happy",
+        fullness = json?.optInt("fullness", InitialPetFullness) ?: InitialPetFullness,
+        mood = json?.optString("mood", InitialPetMood) ?: InitialPetMood,
         lastFedMs = json?.optLong("lastFedMs", 0L) ?: 0L,
         equippedCosmetic = json?.optString("equippedCosmetic", "") ?: ""
     )

@@ -303,6 +303,7 @@ private fun WrappedScreen(onBack: () -> Unit) {
     val weekSessions = state.weekSessions
     val weeklyPoints = weekSessions.sumOf { it.pointsEarned }
     val best = state.bestSession
+    val haptics = rememberHaptics()
     val improvement = if (weekSessions.size >= 2) {
         weekSessions.first().focusScore - weekSessions.last().focusScore
     } else {
@@ -326,7 +327,7 @@ private fun WrappedScreen(onBack: () -> Unit) {
                         KpiTile("Streak", "${state.streakDays}d", Modifier.weight(1f))
                     }
                     Button(
-                        onClick = {},
+                        onClick = { haptics.tap() },
                         colors = ButtonDefaults.buttonColors(containerColor = EarnedColors.Primary),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -353,6 +354,7 @@ private fun StoreScreen(onBack: () -> Unit) {
     val categories = listOf("Rewards", "Pet", "Garden", "Boosts")
     var selectedCategory by remember { mutableStateOf(categories.first()) }
     var lastMessage by remember { mutableStateOf("Purchases are saved locally on this device.") }
+    val haptics = rememberHaptics()
     val items = listOf(
         StoreItem("youtube_15", "15 min YouTube pass", "Rewards", 450, "Unlock reward app time", 1),
         StoreItem("tiktok_30", "30 min TikTok pass", "Rewards", 820, "Spend from Time Bank", 1),
@@ -400,6 +402,7 @@ private fun StoreScreen(onBack: () -> Unit) {
                     }
                     Button(
                         onClick = {
+                            haptics.confirm()
                             when {
                                 locked -> lastMessage = "Focus crown unlocks when your pet reaches stage 4."
                                 else -> {
@@ -429,6 +432,7 @@ private fun DeskAuditScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
     val audit = state.deskAudit
     val resultVisible = audit.timestampMs > 0L
+    val haptics = rememberHaptics()
 
     MoreDetailScaffold("Desk audit", "Score your workspace before focus starts.", onBack) {
         item {
@@ -442,7 +446,10 @@ private fun DeskAuditScreen(onBack: () -> Unit) {
                         }
                     }
                     Button(
-                        onClick = { EarnedItStore.runDeskAudit() },
+                        onClick = {
+                            haptics.confirm()
+                            EarnedItStore.runDeskAudit()
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = EarnedColors.Primary),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -485,6 +492,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
     var selectedDuration by remember { mutableIntStateOf(25) }
     var created by remember { mutableStateOf(false) }
     val blocks = state.scheduledBlocks.sortedBy { it.startTimeMs }
+    val haptics = rememberHaptics()
 
     MoreDetailScaffold("Calendar", "Plan protected focus blocks.", onBack) {
         item {
@@ -500,6 +508,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
+                        haptics.confirm()
                         EarnedItStore.scheduleFocusBlock("Focus block", selectedDuration)
                         created = true
                     },
@@ -541,6 +550,7 @@ private fun TimeBankScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
     var redeemAmount by remember { mutableIntStateOf(15) }
     var message by remember { mutableStateOf("Earned minutes can be redeemed for reward apps after focus.") }
+    val haptics = rememberHaptics()
     val earnedToday = state.timeBankTransactions
         .filter { it.minutes > 0 && isToday(it.timestampMs) }
         .sumOf { it.minutes }
@@ -569,6 +579,7 @@ private fun TimeBankScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
+                        haptics.confirm()
                         message = if (EarnedItStore.redeemTimeBank(redeemAmount, "YouTube")) {
                             "$redeemAmount minutes reserved for YouTube reward time."
                         } else {
@@ -608,6 +619,7 @@ private fun TimeBankScreen(onBack: () -> Unit) {
 private fun PrivacyLedgerScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
     val permissions = state.permissions
+    val haptics = rememberHaptics()
 
     MoreDetailScaffold("Privacy ledger", "What EarnedIt sees, stores, and never sends.", onBack) {
         item {
@@ -646,12 +658,18 @@ private fun PrivacyLedgerScreen(onBack: () -> Unit) {
         }
         item {
             SectionCard("Data controls", "Demo-safe controls") {
-                OutlinedButton(onClick = { EarnedItStore.clearSessionHistory() }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = {
+                    haptics.confirm()
+                    EarnedItStore.clearSessionHistory()
+                }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Clear local session history")
                 }
-                TextButton(onClick = { EarnedItStore.resetDemoData() }, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = {
+                    haptics.confirm()
+                    EarnedItStore.resetDemoData()
+                }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Reset demo data")
@@ -665,6 +683,7 @@ private fun PrivacyLedgerScreen(onBack: () -> Unit) {
 private fun SettingsScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
     val settings = state.settings
+    val haptics = rememberHaptics()
 
     MoreDetailScaffold("Settings", "Profile, permissions, and demo controls.", onBack) {
         item {
@@ -700,7 +719,10 @@ private fun SettingsScreen(onBack: () -> Unit) {
                 SettingSwitch("Demo mode", "Seed believable points, friends, and sessions", settings.demoModeEnabled) {
                     EarnedItStore.updateSettings(settings.copy(demoModeEnabled = it))
                 }
-                Surface(onClick = { EarnedItStore.resetDemoData() }, color = Color.Transparent) {
+                Surface(onClick = {
+                    haptics.confirm()
+                    EarnedItStore.resetDemoData()
+                }, color = Color.Transparent) {
                     StatusRow(Icons.Filled.RestartAlt, "Reset demo state", "Restores sample sessions, points, and Time Bank.", EarnedColors.Primary)
                 }
                 StatusRow(Icons.Filled.Settings, "Blocked app shortcuts", "Jump to blocked and reward app setup from here.", EarnedColors.Secondary)
@@ -734,6 +756,8 @@ private fun MoreDetailScaffold(
     onBack: () -> Unit,
     content: LazyListScope.() -> Unit
 ) {
+    val haptics = rememberHaptics()
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -748,7 +772,10 @@ private fun MoreDetailScaffold(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Surface(
-                    onClick = onBack,
+                    onClick = {
+                        haptics.tap()
+                        onBack()
+                    },
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.size(44.dp)
@@ -819,8 +846,13 @@ private fun StatusPill(text: String, color: Color) {
 
 @Composable
 private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val haptics = rememberHaptics()
+
     Surface(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.clickable {
+            haptics.select()
+            onClick()
+        },
         shape = RoundedCornerShape(999.dp),
         color = if (selected) EarnedColors.Primary else MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, if (selected) EarnedColors.Primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
@@ -864,8 +896,13 @@ private fun ProgressBlock(title: String, detail: String, progress: Float, color:
 
 @Composable
 private fun CareAction(label: String, cost: String, icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val haptics = rememberHaptics()
+
     Surface(
-        onClick = onClick,
+        onClick = {
+            haptics.tap()
+            onClick()
+        },
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         color = EarnedColors.Primary.copy(alpha = 0.10f)
@@ -892,6 +929,8 @@ private fun AuditResult(icon: ImageVector, label: String, state: String, detail:
 
 @Composable
 private fun SettingSwitch(title: String, body: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val haptics = rememberHaptics()
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -901,7 +940,13 @@ private fun SettingSwitch(title: String, body: String, checked: Boolean, onCheck
             Text(title, fontWeight = FontWeight.SemiBold)
             Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = {
+                haptics.select()
+                onCheckedChange(it)
+            }
+        )
     }
 }
 

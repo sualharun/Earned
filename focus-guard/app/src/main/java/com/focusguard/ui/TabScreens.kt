@@ -240,6 +240,8 @@ private data class MoreItem(val label: String, val hint: String, val icon: Image
 
 @Composable
 private fun SocialHeader() {
+    val haptics = rememberHaptics()
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -260,7 +262,7 @@ private fun SocialHeader() {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Surface(
-                onClick = {},
+                onClick = { haptics.tap() },
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 1.dp,
@@ -276,7 +278,7 @@ private fun SocialHeader() {
                 }
             }
             Surface(
-                onClick = {},
+                onClick = { haptics.tap() },
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 1.dp,
@@ -506,7 +508,17 @@ private fun KpiCard(label: String, value: String, modifier: Modifier = Modifier)
 
 @Composable
 private fun CtaCard(icon: ImageVector, title: String, body: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(18.dp), color = EarnedColors.Primary.copy(alpha = 0.10f)) {
+    val haptics = rememberHaptics()
+
+    Surface(
+        onClick = {
+            haptics.tap()
+            onClick()
+        },
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = EarnedColors.Primary.copy(alpha = 0.10f)
+    ) {
         Column(modifier = Modifier.padding(15.dp)) {
             Icon(icon, contentDescription = null, tint = EarnedColors.Primary)
             Spacer(Modifier.height(8.dp))
@@ -561,10 +573,15 @@ private fun RadarCard() {
 
 @Composable
 private fun MoreRow(item: MoreItem, onClick: () -> Unit) {
+    val haptics = rememberHaptics()
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable {
+                haptics.select()
+                onClick()
+            }
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically

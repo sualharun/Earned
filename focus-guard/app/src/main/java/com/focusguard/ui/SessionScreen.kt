@@ -35,6 +35,7 @@ import com.focusguard.ui.theme.EarnedColors
 @Composable
 fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
     val state by SessionManager.stateFlow.collectAsState()
+    val haptics = rememberHaptics()
 
     LaunchedEffect(state.isActive) {
         if (!state.isActive && state.remainingSeconds <= 0) {
@@ -306,7 +307,10 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
         Spacer(Modifier.height(24.dp))
 
         // End session button
-        TextButton(onClick = { showEndDialog = true }) {
+        TextButton(onClick = {
+            haptics.tap()
+            showEndDialog = true
+        }) {
             Icon(
                 Icons.Filled.Close,
                 contentDescription = null,
@@ -332,6 +336,7 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
             text = { Text("You'll forfeit any points for this session.") },
             confirmButton = {
                 TextButton(onClick = {
+                    haptics.confirm()
                     showEndDialog = false
                     SessionManager.stopSession()
                     onSessionEnd(true)
@@ -340,7 +345,10 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showEndDialog = false }) {
+                TextButton(onClick = {
+                    haptics.tap()
+                    showEndDialog = false
+                }) {
                     Text("Keep going")
                 }
             }
