@@ -1,6 +1,8 @@
 package com.focusguard.ui
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -44,12 +46,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.focusguard.R
 import com.focusguard.state.EarnedItStore
 import com.focusguard.state.EarnedItUiState
 import com.focusguard.state.FocusSessionSummary
@@ -177,53 +182,88 @@ private fun PetHeroCard(pet: PetProfile) {
         color = Color.White,
         shadowElevation = 6.dp
     ) {
-        Column(
-            modifier = Modifier
-                .background(
-                    Brush.verticalGradient(
-                        listOf(washColor.copy(alpha = 0.18f), Color.Transparent)
-                    )
-                )
-                .padding(top = 28.dp, bottom = 22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Image(
+                painter = painterResource(id = homePetSceneRes(pet)),
+                contentDescription = null,
+                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.Crop
+            )
             Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.BottomCenter
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.00f to Color.Transparent,
+                                0.50f to Color.Transparent,
+                                0.78f to Color.White.copy(alpha = 0.82f),
+                                1.00f to Color.White
+                            )
+                        )
+                    )
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(washColor.copy(alpha = 0.08f), Color.Transparent)
+                        )
+                    )
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 30.dp, bottom = 22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(
-                    modifier = Modifier
-                        .padding(bottom = 8.dp)
-                        .size(width = 130.dp, height = 18.dp)
-                        .background(
-                            Brush.radialGradient(
-                                listOf(
-                                    Color.Black.copy(alpha = 0.10f),
-                                    Color.Transparent
-                                )
-                            ),
-                            shape = CircleShape
-                        )
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    Spacer(Modifier.height(180.dp))
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    pet.name,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = HomeTitleColor
                 )
-                PetSprite(pet = pet, size = 168.dp, glow = true)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "${pet.mood} · fullness ${pet.fullness}%",
+                    fontSize = 13.sp,
+                    color = HomeSubtitleColor
+                )
+                Spacer(Modifier.height(12.dp))
+                FullnessBar(fullness = pet.fullness, happy = happy)
             }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                pet.name,
-                fontFamily = FontFamily.Serif,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = HomeTitleColor
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                "${pet.mood} · fullness ${pet.fullness}%",
-                fontSize = 13.sp,
-                color = HomeSubtitleColor
-            )
-            Spacer(Modifier.height(12.dp))
-            FullnessBar(fullness = pet.fullness, happy = happy)
         }
+    }
+}
+
+@DrawableRes
+private fun homePetSceneRes(pet: PetProfile): Int {
+    val species = pet.species.lowercase()
+    val stage = when {
+        pet.stage <= 1 -> "egg"
+        pet.stage == 2 -> "kid"
+        else -> "adult"
+    }
+
+    return when (species to stage) {
+        "lumi" to "egg" -> R.drawable.home_pet_lumi_egg
+        "lumi" to "kid" -> R.drawable.home_pet_lumi_kid
+        "lumi" to "adult" -> R.drawable.home_pet_lumi_adult
+        "owly" to "egg" -> R.drawable.home_pet_owly_egg
+        "owly" to "kid" -> R.drawable.home_pet_owly_kid
+        "owly" to "adult" -> R.drawable.home_pet_owly_adult
+        "kitsu" to "egg" -> R.drawable.home_pet_kitsu_egg
+        "kitsu" to "kid" -> R.drawable.home_pet_kitsu_kid
+        else -> R.drawable.home_pet_kitsu_adult
     }
 }
 

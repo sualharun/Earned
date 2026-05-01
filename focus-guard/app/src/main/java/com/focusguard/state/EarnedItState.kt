@@ -195,6 +195,7 @@ object EarnedItStore {
                     } else {
                         runCatching {
                             EarnedItJson.decode(stored)
+                                .withNormalizedPetStage()
                                 .withFreshPetBaseline()
                                 .copy(loaded = true, permissions = readPermissions(context.applicationContext))
                         }
@@ -263,7 +264,7 @@ object EarnedItStore {
                 detail = "${durationMinutes} minute session at ${score}% focus.",
                 timestampMs = now
             )
-            val nextStage = ((state.lifetimeFocusMinutes + durationMinutes) / 120 + 1).coerceIn(1, 5)
+            val nextStage = petStageForLifetimeFocus(state.lifetimeFocusMinutes + durationMinutes)
             val updated = state.copy(
                 points = state.points + points,
                 allSessions = (listOf(session) + state.allSessions).take(250),
@@ -327,6 +328,13 @@ object EarnedItStore {
         return PurchaseResult.Success
     }
 
+    fun equipPetCosmetic(itemName: String) {
+        mutate { state ->
+            state.copy(pet = state.pet.copy(equippedCosmetic = itemName))
+                .withPrivacyEvent("store", "Pet cosmetic equipped", "$itemName equipped locally.")
+        }
+    }
+
     fun redeemTimeBank(minutes: Int, rewardApp: String): Boolean {
         if (_state.value.timeBankMinutes < minutes) return false
         val now = System.currentTimeMillis()
@@ -386,6 +394,30 @@ object EarnedItStore {
         }
     }
 
+    fun setDemoMode(enabled: Boolean) {
+        if (enabled) {
+            mutate { state ->
+                val seeded = seedDemoState()
+                seeded.copy(
+                    onboardingComplete = true,
+                    loaded = true,
+                    permissions = state.permissions,
+                    settings = seeded.settings.copy(
+                        notificationsEnabled = state.settings.notificationsEnabled,
+                        hapticsEnabled = state.settings.hapticsEnabled,
+                        strictBlockingEnabled = state.settings.strictBlockingEnabled,
+                        demoModeEnabled = true
+                    )
+                ).withPrivacyEvent("settings", "Demo mode enabled", "Seeded points, pet progress, sessions, and reward history.")
+            }
+        } else {
+            mutate { state ->
+                state.copy(settings = state.settings.copy(demoModeEnabled = false))
+                    .withPrivacyEvent("settings", "Demo mode disabled", "Kept existing local data and stopped demo reseeding.")
+            }
+        }
+    }
+
     fun clearSessionHistory() {
         mutate { state ->
             state.copy(
@@ -397,7 +429,7 @@ object EarnedItStore {
     }
 
     fun resetDemoData() {
-        mutate { seedDemoState().copy(onboardingComplete = true, loaded = true) }
+        setDemoMode(true)
     }
 
     private fun mutate(reducer: (EarnedItUiState) -> EarnedItUiState) {
@@ -428,18 +460,23 @@ fun seedDemoState(): EarnedItUiState {
     val sessions = listOf(
         FocusSessionSummary(now - 3_600_000L, 45, 91, true, 140, 1, now - 6_300_000L, now - 3_600_000L, 45, false, listOf("Instagram"), 9, 42),
         FocusSessionSummary(now - 86_400_000L, 25, 84, true, 105, 2, now - 87_900_000L, now - 86_400_000L, 25, false, listOf("TikTok"), 5, 58),
-        FocusSessionSummary(now - 172_800_000L, 50, 94, true, 175, 0, now - 175_800_000L, now - 172_800_000L, 50, false, listOf("YouTube"), 10, 0)
+        FocusSessionSummary(now - 172_800_000L, 50, 94, true, 175, 0, now - 175_800_000L, now - 172_800_000L, 50, false, listOf("YouTube"), 10, 0),
+        FocusSessionSummary(now - 259_200_000L, 90, 89, true, 315, 1, now - 264_600_000L, now - 259_200_000L, 90, false, listOf("Instagram", "Discord"), 18, 28),
+        FocusSessionSummary(now - 345_600_000L, 60, 96, true, 235, 0, now - 349_200_000L, now - 345_600_000L, 60, false, listOf("TikTok"), 12, 0)
     )
     return EarnedItUiState(
         onboardingComplete = true,
         profile = UserProfile("Sanjiv", "sual"),
-        points = 2840,
-        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 3, fullness = 78, mood = "Happy"),
+        points = 50_000,
+        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 3, fullness = 92, mood = "Energized", equippedCosmetic = "Lumi scarf"),
         allSessions = sessions,
         timeBankTransactions = listOf(
             TimeBankTransaction(now - 3_600_000L, "earn", 9, "+9m earned", "45 minute session at 91% focus.", now - 3_600_000L),
             TimeBankTransaction(now - 5_400_000L, "redeem", -15, "-15m reserved", "YouTube reward pass after homework.", now - 5_400_000L, "YouTube"),
-            TimeBankTransaction(now - 86_400_000L, "earn", 5, "+5m earned", "25 minute session at 84% focus.", now - 86_400_000L)
+            TimeBankTransaction(now - 86_400_000L, "earn", 5, "+5m earned", "25 minute session at 84% focus.", now - 86_400_000L),
+            TimeBankTransaction(now - 259_200_000L, "earn", 18, "+18m earned", "90 minute session at 89% focus.", now - 259_200_000L),
+            TimeBankTransaction(now - 345_600_000L, "earn", 12, "+12m earned", "60 minute session at 96% focus.", now - 345_600_000L),
+            TimeBankTransaction(now - 604_800_000L, "earn", 180, "+180m demo grant", "Judge demo balance for reward redemption.", now - 604_800_000L)
         ),
         storePurchases = listOf(StorePurchase(now - 120_000L, "lumi_scarf", "Lumi scarf", "Pet", 260, now - 120_000L, true)),
         scheduledBlocks = listOf(
@@ -481,6 +518,15 @@ private fun EarnedItUiState.withFreshPetBaseline(): EarnedItUiState {
     } else {
         this
     }
+}
+
+private fun EarnedItUiState.withNormalizedPetStage(): EarnedItUiState =
+    copy(pet = pet.copy(stage = pet.stage.coerceIn(1, 3)))
+
+private fun petStageForLifetimeFocus(minutes: Int): Int = when {
+    minutes >= 240 -> 3
+    minutes >= 60 -> 2
+    else -> 1
 }
 
 private fun calculateStreakDays(sessions: List<FocusSessionSummary>): Int {

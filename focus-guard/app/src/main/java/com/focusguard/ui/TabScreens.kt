@@ -138,14 +138,14 @@ fun MoreScreen(onOpen: (String) -> Unit) {
         ),
         "Tools" to listOf(
             MoreItem("Focus Pet", "Feed your focus companion", Icons.Filled.Pets),
-            MoreItem("Store", "Spend points and unlock rewards", Icons.Filled.Store),
-            MoreItem("Desk audit", "AI rates your workspace", Icons.Filled.CameraAlt),
-            MoreItem("Calendar", "Plan focus around events", Icons.Filled.CalendarMonth),
+            MoreItem("Store", "Buy local passes and pet cosmetics", Icons.Filled.Store),
+            MoreItem("Desk audit", "Score your workspace locally", Icons.Filled.CameraAlt),
+            MoreItem("Calendar", "Save local focus blocks", Icons.Filled.CalendarMonth),
             MoreItem("Time bank", "Earned time for reward apps", Icons.Filled.Timer)
         ),
         "Account" to listOf(
             MoreItem("Privacy ledger", "100% on-device · 0 uploads", Icons.Filled.Shield),
-            MoreItem("Settings", "Theme, notifications, account", Icons.Filled.Settings)
+            MoreItem("Settings", "Preferences and demo data", Icons.Filled.Settings)
         )
     )
     LazyColumn(
@@ -193,7 +193,7 @@ fun PetDetailScreen() {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(22.dp)) {
                     PetSprite(state.pet, size = 210.dp)
                     Text(state.pet.name, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                    Text("${state.pet.mood} · Stage ${state.pet.stage}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${state.pet.mood} · ${petStageLabel(state.pet.stage)} form", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(14.dp))
                     ProgressBar(state.pet.fullness / 100f, EarnedColors.Focus)
                     Text("Fullness ${state.pet.fullness}/100", modifier = Modifier.padding(top = 8.dp), fontSize = 12.sp)
@@ -237,6 +237,12 @@ private data class SocialFriend(
 }
 
 private data class MoreItem(val label: String, val hint: String, val icon: ImageVector)
+
+private fun petStageLabel(stage: Int): String = when {
+    stage <= 1 -> "Egg"
+    stage == 2 -> "Kid"
+    else -> "Adult"
+}
 
 @Composable
 private fun SocialHeader() {

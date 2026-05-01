@@ -111,8 +111,13 @@ fun MoreFeatureScreen(title: String, onBack: () -> Unit) {
 @Composable
 fun MorePetDetailScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
-    val nextStageMinutes = (state.pet.stage * 90).coerceAtLeast(90)
-    val evolutionProgress = (state.lifetimeFocusMinutes / nextStageMinutes.toFloat()).coerceIn(0f, 1f)
+    val stageLabel = petStageLabel(state.pet.stage)
+    val nextStageMinutes = nextPetStageMinutes(state.pet.stage)
+    val evolutionProgress = if (nextStageMinutes == null) {
+        1f
+    } else {
+        (state.lifetimeFocusMinutes / nextStageMinutes.toFloat()).coerceIn(0f, 1f)
+    }
     var moodBoost by remember { mutableStateOf("Ready") }
 
     MoreDetailScaffold(
@@ -134,14 +139,21 @@ fun MorePetDetailScreen(onBack: () -> Unit) {
                     PetSprite(state.pet, size = 190.dp)
                     Text(state.pet.name, fontSize = 30.sp, fontWeight = FontWeight.Bold)
                     StatusPill("${state.pet.mood} mood", EarnedColors.Focus)
+                    if (state.pet.equippedCosmetic.isNotBlank()) {
+                        StatusPill("${state.pet.equippedCosmetic} equipped", EarnedColors.Points)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        KpiTile("Stage", state.pet.stage.toString(), Modifier.weight(1f))
+                        KpiTile("Stage", stageLabel, Modifier.weight(1f))
                         KpiTile("Fullness", "${state.pet.fullness}%", Modifier.weight(1f))
                         KpiTile("Streak", "${state.streakDays}d", Modifier.weight(1f))
                     }
                     ProgressBlock(
-                        title = "Next evolution",
-                        detail = "${state.lifetimeFocusMinutes} of $nextStageMinutes lifetime focused minutes",
+                        title = if (nextStageMinutes == null) "Adult form" else "Next evolution",
+                        detail = if (nextStageMinutes == null) {
+                            "${state.lifetimeFocusMinutes} lifetime focused minutes recorded."
+                        } else {
+                            "${state.lifetimeFocusMinutes} of $nextStageMinutes lifetime focused minutes"
+                        },
                         progress = evolutionProgress,
                         color = EarnedColors.Points
                     )
@@ -173,8 +185,13 @@ fun MorePetDetailScreen(onBack: () -> Unit) {
         }
         item {
             SectionCard("Milestones", "Recent growth moments") {
-                StatusRow(Icons.Filled.CheckCircle, "Stage ${state.pet.stage} unlocked", "${state.lifetimeFocusMinutes} lifetime focus minutes recorded.", EarnedColors.Focus)
-                StatusRow(Icons.Filled.WorkspacePremium, "Next evolution", "${(nextStageMinutes - state.lifetimeFocusMinutes).coerceAtLeast(0)} focus minutes remaining.", EarnedColors.Points)
+                StatusRow(Icons.Filled.CheckCircle, "$stageLabel form unlocked", "${state.lifetimeFocusMinutes} lifetime focus minutes recorded.", EarnedColors.Focus)
+                StatusRow(
+                    Icons.Filled.WorkspacePremium,
+                    if (nextStageMinutes == null) "Fully evolved" else "Next evolution",
+                    if (nextStageMinutes == null) "Your pet has reached its adult habitat." else "${(nextStageMinutes - state.lifetimeFocusMinutes).coerceAtLeast(0)} focus minutes remaining.",
+                    EarnedColors.Points
+                )
                 StatusRow(Icons.Filled.Lock, "Night aura", "Requires a 14 day streak. Current streak: ${state.streakDays}.", MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -191,7 +208,7 @@ private fun TrophiesScreen(onBack: () -> Unit) {
         Trophy("Deep Work Bronze", "Reach 250 focused minutes.", (state.lifetimeFocusMinutes / 250f).coerceIn(0f, 1f), state.lifetimeFocusMinutes >= 250),
         Trophy("Clean Desk", "Pass a desk audit with 85+.", cleanDeskProgress, state.deskAudit.score >= 85),
         Trophy("Reward Saver", "Bank 60 reward minutes.", (state.timeBankMinutes / 60f).coerceIn(0f, 1f), state.timeBankMinutes >= 60),
-        Trophy("Pet Guardian", "Evolve your pet to stage 4.", (state.pet.stage / 4f).coerceIn(0f, 1f), state.pet.stage >= 4)
+        Trophy("Pet Guardian", "Evolve your pet into its adult form.", (state.pet.stage / 3f).coerceIn(0f, 1f), state.pet.stage >= 3)
     )
     val earned = trophies.filter { it.earned }
     val nextTrophy = trophies.filterNot { it.earned }.maxByOrNull { it.progress }
@@ -303,7 +320,6 @@ private fun WrappedScreen(onBack: () -> Unit) {
     val weekSessions = state.weekSessions
     val weeklyPoints = weekSessions.sumOf { it.pointsEarned }
     val best = state.bestSession
-    val haptics = rememberHaptics()
     val improvement = if (weekSessions.size >= 2) {
         weekSessions.first().focusScore - weekSessions.last().focusScore
     } else {
@@ -326,15 +342,6 @@ private fun WrappedScreen(onBack: () -> Unit) {
                         KpiTile("Points", "+$weeklyPoints", Modifier.weight(1f))
                         KpiTile("Streak", "${state.streakDays}d", Modifier.weight(1f))
                     }
-                    Button(
-                        onClick = { haptics.tap() },
-                        colors = ButtonDefaults.buttonColors(containerColor = EarnedColors.Primary),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Preview share card")
-                    }
                 }
             }
         }
@@ -351,7 +358,7 @@ private fun WrappedScreen(onBack: () -> Unit) {
 @Composable
 private fun StoreScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
-    val categories = listOf("Rewards", "Pet", "Garden", "Boosts")
+    val categories = listOf("Rewards", "Pet")
     var selectedCategory by remember { mutableStateOf(categories.first()) }
     var lastMessage by remember { mutableStateOf("Purchases are saved locally on this device.") }
     val haptics = rememberHaptics()
@@ -359,9 +366,9 @@ private fun StoreScreen(onBack: () -> Unit) {
         StoreItem("youtube_15", "15 min YouTube pass", "Rewards", 450, "Unlock reward app time", 1),
         StoreItem("tiktok_30", "30 min TikTok pass", "Rewards", 820, "Spend from Time Bank", 1),
         StoreItem("lumi_scarf", "Lumi scarf", "Pet", 260, "Equip a cozy pet cosmetic", 1),
-        StoreItem("focus_crown", "Focus crown", "Pet", 620, "Stage 4 required", 4),
-        StoreItem("garden_lantern", "Garden lantern", "Garden", 340, "Decorate your social podium", 1),
-        StoreItem("deep_work_boost", "Deep Work boost", "Boosts", 500, "+10% points next session", 1)
+        StoreItem("kitsu_bandana", "Kitsu bandana", "Pet", 320, "Equip a bright focus bandana", 1),
+        StoreItem("owly_glasses", "Owly glasses", "Pet", 380, "Equip study glasses", 2),
+        StoreItem("focus_crown", "Focus crown", "Pet", 620, "Adult form required", 3)
     )
 
     MoreDetailScaffold("Store", "Spend points on rewards and pet upgrades.", onBack) {
@@ -384,6 +391,7 @@ private fun StoreScreen(onBack: () -> Unit) {
         }
         items(items.filter { it.category == selectedCategory }) { item ->
             val isOwned = state.storePurchases.any { it.itemId == item.id }
+            val isEquipped = item.category == "Pet" && state.pet.equippedCosmetic == item.name
             val locked = state.pet.stage < item.requiredStage
             Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
                 Row(
@@ -404,7 +412,12 @@ private fun StoreScreen(onBack: () -> Unit) {
                         onClick = {
                             haptics.confirm()
                             when {
-                                locked -> lastMessage = "Focus crown unlocks when your pet reaches stage 4."
+                                locked -> lastMessage = "Focus crown unlocks when your pet reaches adult form."
+                                isOwned && item.category == "Pet" -> {
+                                    EarnedItStore.equipPetCosmetic(item.name)
+                                    lastMessage = "${item.name} equipped."
+                                }
+                                isOwned -> lastMessage = "${item.name} is already in your inventory."
                                 else -> {
                                     lastMessage = when (EarnedItStore.purchaseStoreItem(item.id, item.name, item.category, item.price)) {
                                         PurchaseResult.Success -> "${item.name} added to inventory."
@@ -415,11 +428,20 @@ private fun StoreScreen(onBack: () -> Unit) {
                                 }
                             }
                         },
-                        enabled = !locked,
+                        enabled = !locked && !isEquipped && !(isOwned && item.category != "Pet"),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = if (isOwned) EarnedColors.Focus else EarnedColors.Primary)
                     ) {
-                        Text(if (isOwned) "Owned" else if (locked) "Locked" else "Buy", fontSize = 12.sp)
+                        Text(
+                            when {
+                                locked -> "Locked"
+                                isEquipped -> "Equipped"
+                                isOwned && item.category == "Pet" -> "Equip"
+                                isOwned -> "Owned"
+                                else -> "Buy"
+                            },
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }
@@ -537,8 +559,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
             }
         }
         item {
-            SectionCard("Reminder state", "Ready without full OS calendar integration") {
-                StatusRow(Icons.Filled.Notifications, "10 minute reminder", "Local notification planned for upcoming blocks.", EarnedColors.Focus)
+            SectionCard("Schedule status", "Saved inside EarnedIt") {
                 StatusRow(Icons.Filled.Security, "Conflict check", "No reward window overlaps detected.", EarnedColors.Focus)
             }
         }
@@ -716,8 +737,8 @@ private fun SettingsScreen(onBack: () -> Unit) {
         }
         item {
             SectionCard("Demo controls", "Fast recovery for judging") {
-                SettingSwitch("Demo mode", "Seed believable points, friends, and sessions", settings.demoModeEnabled) {
-                    EarnedItStore.updateSettings(settings.copy(demoModeEnabled = it))
+                SettingSwitch("Demo mode", "Seed lots of points, sessions, pet progress, and reward time", settings.demoModeEnabled) {
+                    EarnedItStore.setDemoMode(it)
                 }
                 Surface(onClick = {
                     haptics.confirm()
@@ -725,7 +746,6 @@ private fun SettingsScreen(onBack: () -> Unit) {
                 }, color = Color.Transparent) {
                     StatusRow(Icons.Filled.RestartAlt, "Reset demo state", "Restores sample sessions, points, and Time Bank.", EarnedColors.Primary)
                 }
-                StatusRow(Icons.Filled.Settings, "Blocked app shortcuts", "Jump to blocked and reward app setup from here.", EarnedColors.Secondary)
             }
         }
         item {
@@ -740,10 +760,10 @@ private fun SettingsScreen(onBack: () -> Unit) {
 
 @Composable
 private fun MoreFallbackScreen(title: String, onBack: () -> Unit) {
-    MoreDetailScaffold(title, "This flow is ready for the next implementation pass.", onBack) {
+    MoreDetailScaffold(title, "This tool is not available in this build.", onBack) {
         item {
-            SectionCard("Coming next", "Navigation and layout are wired.") {
-                StatusRow(Icons.Filled.Lock, "Placeholder", "Add feature-specific content here.", EarnedColors.Primary)
+            SectionCard("Unavailable", "Removed from the main More tab until it has a real flow.") {
+                StatusRow(Icons.Filled.Lock, title, "No demo-only placeholder is shown in the app navigation.", EarnedColors.Primary)
             }
         }
     }
@@ -968,6 +988,18 @@ private fun ProgressBar(progress: Float, color: Color) {
 }
 
 private fun List<Int>.averageOrZero(): Double = if (isEmpty()) 0.0 else average()
+
+private fun petStageLabel(stage: Int): String = when {
+    stage <= 1 -> "Egg"
+    stage == 2 -> "Kid"
+    else -> "Adult"
+}
+
+private fun nextPetStageMinutes(stage: Int): Int? = when {
+    stage <= 1 -> 60
+    stage == 2 -> 240
+    else -> null
+}
 
 private fun hourLabel(timestampMs: Long): String {
     val hour = Instant.ofEpochMilli(timestampMs).atZone(ZoneId.systemDefault()).hour

@@ -36,7 +36,7 @@ fun PetSprite(
     glow: Boolean = true
 ) {
     val context = LocalContext.current
-    val fileName = "${pet.species}-${pet.stage.coerceIn(1, 5)}.png"
+    val fileName = "${pet.species}-${assetStageForPet(pet.species, pet.stage)}.png"
     val bitmap = remember(fileName) {
         runCatching {
             context.assets.open(fileName).use { stream ->
@@ -89,4 +89,13 @@ fun PetSprite(
             )
         }
     }
+}
+
+private fun assetStageForPet(species: String, stage: Int): Int = when {
+    stage <= 1 -> 1
+    stage == 2 -> 2
+    species == "lumi" -> 4
+    species == "kitsu" -> 5
+    species == "owly" -> 5
+    else -> 3
 }

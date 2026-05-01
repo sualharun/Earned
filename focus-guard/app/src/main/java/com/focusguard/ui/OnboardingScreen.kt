@@ -429,7 +429,7 @@ private fun PetSpeciesCard(
                     .padding(top = 14.dp, bottom = 14.dp)
             ) {
                 PetSprite(
-                    pet = PetProfile(species = id, name = id, stage = 3),
+                    pet = PetProfile(species = id, name = id, stage = 2),
                     size = 96.dp,
                     glow = false
                 )
