@@ -1,13 +1,14 @@
 package com.focusguard.ml
 
+import android.content.Context
 import android.graphics.Bitmap
 
 // Person 1: Orchestrates face detection, head pose, and eye openness models
-class MLPipeline(
-    private val faceDetector: FaceDetector = FaceDetector(),
-    private val headPoseEstimator: HeadPoseEstimator = HeadPoseEstimator(),
-    private val eyeOpenEstimator: EyeOpenEstimator = EyeOpenEstimator()
-) {
+class MLPipeline(context: Context) {
+    private val faceDetector = FaceDetector(context)
+    private val headPoseEstimator = HeadPoseEstimator(context)
+    private val eyeOpenEstimator = EyeOpenEstimator()
+
     var onAttentionSignal: ((AttentionSignal) -> Unit)? = null
     var isRunning: Boolean = false
         private set
@@ -20,7 +21,7 @@ class MLPipeline(
         isRunning = false
     }
 
-    fun processFrame(frameBitmap: Bitmap): AttentionSignal {
+    suspend fun processFrame(frameBitmap: Bitmap): AttentionSignal {
         val signal = when (val result = faceDetector.detect(frameBitmap)) {
             is FaceDetectionResult.Detected -> {
                 val pose = headPoseEstimator.estimate(result.faceCrop)

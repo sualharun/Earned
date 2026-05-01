@@ -1,9 +1,9 @@
 package com.focusguard.ml
 
-// Person 1: Eye openness estimation using eye landmark TFLite model
+data class EyeResult(val eyeAspectRatio: Float)
+
 class EyeOpenEstimator {
-    fun estimate(faceCrop: FaceCrop): EyeState {
-        // Person 1/2 replaces this with eye landmark LiteRT inference.
-        return EyeState(eyeAspectRatio = 0.3f)
+    fun estimate(faceCrop: FaceCrop): EyeResult {
+        return EyeResult(0.3f) // stub - eyes open
     }
 }

@@ -9,7 +9,7 @@ data class FaceCrop(
     val bounds: RectF? = null
 )
 
-sealed interface FaceDetectionResult {
-    data class Detected(val faceCrop: FaceCrop) : FaceDetectionResult
-    data object NoFace : FaceDetectionResult
+sealed class FaceDetectionResult {
+    data class Detected(val faceCrop: FaceCrop) : FaceDetectionResult()
+    object NoFace : FaceDetectionResult()
 }
