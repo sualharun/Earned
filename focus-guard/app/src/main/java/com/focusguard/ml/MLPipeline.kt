@@ -24,7 +24,13 @@ import com.focusguard.instrumentation.BenchmarkRegistry
  * recorder's background thread and never on the inference path.
  */
 
-// Person 1: Orchestrates face detection, head pose, and eye openness models
+/**
+ * High-level ML coordinator used by MainActivity.
+ *
+ * The camera layer gives this class an already rotated and mirrored Bitmap. MLPipeline keeps the
+ * model-specific details hidden from the rest of the app and returns a single AttentionSignal that
+ * the session layer can score. It also stores the latest rich metadata used by Recording Mode.
+ */
 class MLPipeline(context: Context) {
     private val faceDetector = FaceDetector(context)
     private val headPoseEstimator = HeadPoseEstimator(context)
@@ -48,6 +54,8 @@ class MLPipeline(context: Context) {
             when (val result = faceDetector.detect(frameBitmap)) {
                 is FaceDetectionResult.Detected -> {
                     try {
+                        // The face crop owns a Bitmap allocation. Keep all downstream estimation
+                        // inside try/finally so each processed frame releases its crop promptly.
                         val pose = headPoseEstimator.estimate(result.faceCrop)
                         val faceDetected = result.faceCrop.confidence >= FACE_CONFIDENCE_THRESHOLD
 
@@ -76,6 +84,8 @@ class MLPipeline(context: Context) {
                 }
 
                 FaceDetectionResult.NoFace -> AttentionSignal(faceDetected = false).also {
+                    // Quality capture still needs a metadata record for no-face frames so offline
+                    // labeling can distinguish detector misses from later pose/gaze failures.
                     latestQualityMetadata = QualityFrameMetadata(faceDetected = false)
                 }
             }

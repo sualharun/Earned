@@ -98,6 +98,8 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 SessionManager.stateFlow.collect { state ->
                     if (state.phase == SessionPhase.FocusActive && lastPhase != SessionPhase.FocusActive) {
+                        // Each new focus session gets a fresh baseline. This prevents yesterday's
+                        // phone angle or a previous user's posture from biasing today's scoring.
                         signalBuffer.clear()
                         calibrationFrames.clear()
                         baselineYaw = null
@@ -313,6 +315,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun processImageProxy(imageProxy: ImageProxy) {
+        // Run inference only while focus enforcement is active, and keep at most one frame in
+        // flight. CameraX already drops old frames with STRATEGY_KEEP_ONLY_LATEST; this extra guard
+        // prevents slow ML frames from piling up work on the coroutine dispatcher.
         if (!SessionManager.isBlockingEnabled() || isProcessingFrame) {
             imageProxy.close()
             return
@@ -347,6 +352,8 @@ class MainActivity : ComponentActivity() {
                 val signal = mlPipeline.processFrame(rotatedBitmap)
                 SystemMetricsSampler.recordFrame()
                 if (captureThisFrame && recordingModeEnabled) {
+                    // Store both raw and baseline-subtracted angles. Raw values help debug the
+                    // model; baseline-subtracted values are what the scorer actually sees.
                     val baselineSubtractedYaw = signal.yaw - (baselineYaw ?: 0f)
                     val baselineSubtractedPitch = signal.pitch - (baselinePitch ?: 0f)
                     QualityCaptureManager.enqueue(
@@ -405,6 +412,8 @@ class MainActivity : ComponentActivity() {
         synchronized(this) {
             if (isCalibrating) {
                 if (signal.faceDetected) {
+                    // Calibration uses detected-face frames only. Averaging 45 frames gives a
+                    // stable estimate of the user's normal study pose while still finishing quickly.
                     calibrationFrames.add(signal)
                     Log.d("FocusGuard_Camera", "Calibrating baseline... ${calibrationFrames.size}/45")
                     if (calibrationFrames.size >= 45) {
@@ -421,6 +430,9 @@ class MainActivity : ComponentActivity() {
 
                 frameCounter++
                 if (frameCounter >= 15) {
+                    // The models run frame-by-frame, but the session score updates once per second.
+                    // Averaging the recent frames dampens single-frame jitter without hiding real
+                    // transitions for long enough to feel unresponsive.
                     val focusedFrames = signalBuffer.filter { it.faceDetected }
                     val recentFrames = signalBuffer.takeLast(15)
                     val averagedSignal = AttentionSignal(

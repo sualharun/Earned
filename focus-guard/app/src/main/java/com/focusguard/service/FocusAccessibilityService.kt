@@ -6,7 +6,13 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import com.focusguard.session.SessionManager
 
-// Person 3: Accessibility service for app blocking and focus enforcement
+/**
+ * Enforces the app blacklist while a focus session is active.
+ *
+ * Android does not let regular apps prevent another app from launching directly. The permitted
+ * approach here is an AccessibilityService: we observe foreground-window changes, check the package
+ * against SessionManager's blacklist, and relaunch EarnedIt when a blocked app appears.
+ */
 class FocusAccessibilityService : AccessibilityService() {
     private var lastBlockedPackage: String? = null
     private var lastBlockElapsedMs: Long = 0L
@@ -20,6 +26,8 @@ class FocusAccessibilityService : AccessibilityService() {
         if (event == null || event.eventType !in MONITORED_EVENT_TYPES) return
 
         val foregroundPackage = event.packageName?.toString() ?: return
+        // These guards keep the service from blocking the OS, itself, reward time, or repeated
+        // events fired by the same package while Android is settling window focus.
         if (foregroundPackage.isBlank() || shouldIgnorePackage(foregroundPackage)) return
         if (SessionManager.isRewardWindowActive()) return
         if (!SessionManager.isPackageBlocked(foregroundPackage)) return
