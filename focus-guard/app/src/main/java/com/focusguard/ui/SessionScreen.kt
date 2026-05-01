@@ -35,6 +35,7 @@ import com.focusguard.ui.theme.EarnedColors
 @Composable
 fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
     val state by SessionManager.stateFlow.collectAsState()
+    val isCalibrating by SessionManager.isCalibrating.collectAsState()
 
     LaunchedEffect(state.isActive) {
         if (!state.isActive && state.remainingSeconds <= 0) {
@@ -212,7 +213,7 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
         if (phase == "DISTRACTED") {
             Spacer(Modifier.height(8.dp))
             Text(
-                "+2s per distracted second",
+                "Timer paused while distracted",
                 style = MaterialTheme.typography.labelSmall,
                 color = EarnedColors.Danger.copy(alpha = 0.8f)
             )
@@ -345,6 +346,37 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
                 }
             }
         )
+    }
+
+    if (isCalibrating) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.95f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "\uD83D\uDCF7 Calibrating...",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Look directly at your screen",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Hold still for a moment",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
     }
 }
 

@@ -48,7 +48,7 @@ data class AttentionScoringConfig(
     val minScore: Float = AttentionScorer.MIN_SCORE,
     val maxScore: Float = AttentionScorer.MAX_SCORE,
     val focusedThreshold: Float = 0.65f,
-    val recoveryRate: Float = 0.025f,
+    val recoveryRate: Float = 0.075f,
     val decayRate: Float = 0.075f,
     val maxAbsYaw: Float = 20f,
     val maxAbsPitch: Float = 15f,
