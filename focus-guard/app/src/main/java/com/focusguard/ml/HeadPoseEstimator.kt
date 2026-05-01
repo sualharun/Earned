@@ -12,11 +12,14 @@ import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.CompiledModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
+import kotlin.math.hypot
 
 data class PoseResult(
     val yaw: Float,
     val pitch: Float,
     val roll: Float,
+    val eyeAspectRatio: Float = 0f,
     val landmarkScore: Float? = null,
     val eyeLandmarks: EyeLandmarkMetadata? = null
 )
@@ -90,18 +93,19 @@ class HeadPoseEstimator(private val context: Context) {
             val score = landmarkOutputBuffers[0].readFloat().firstOrNull()
             // Output 2 is landmarks [1, 468, 3]
             val landmarks = landmarkOutputBuffers[1].readFloat()
+            val normalizedLandmarks = normalizeLandmarks(landmarks)
 
             // Landmark indices: 33, 133 (left eye); 362, 263 (right eye)
             // Each landmark has 3 floats (x, y, z)
-            val eyeIndices = intArrayOf(33, 133, 362, 263)
+            val eyeIndices = intArrayOf(33, 133, 159, 145, 362, 263, 386, 374)
             var minX = 1f
             var maxX = 0f
             var minY = 1f
             var maxY = 0f
 
             for (idx in eyeIndices) {
-                val x = landmarks[idx * 3]
-                val y = landmarks[idx * 3 + 1]
+                val x = normalizedLandmarks[idx * 3]
+                val y = normalizedLandmarks[idx * 3 + 1]
                 if (x < minX) minX = x
                 if (x > maxX) maxX = x
                 if (y < minY) minY = y
@@ -122,11 +126,12 @@ class HeadPoseEstimator(private val context: Context) {
             LandmarkPostprocessResult(
                 eyeRect = eyeRect,
                 score = score,
+                eyeAspectRatio = estimateEyeAspectRatio(normalizedLandmarks),
                 eyeLandmarks = EyeLandmarkMetadata(
-                    leftInner33 = landmarkPoint(landmarks, 33),
-                    leftOuter133 = landmarkPoint(landmarks, 133),
-                    rightInner362 = landmarkPoint(landmarks, 362),
-                    rightOuter263 = landmarkPoint(landmarks, 263)
+                    leftInner33 = landmarkPoint(normalizedLandmarks, 33),
+                    leftOuter133 = landmarkPoint(normalizedLandmarks, 133),
+                    rightInner362 = landmarkPoint(normalizedLandmarks, 362),
+                    rightOuter263 = landmarkPoint(normalizedLandmarks, 263)
                 )
             )
         }
@@ -135,7 +140,14 @@ class HeadPoseEstimator(private val context: Context) {
         if (eyeCrop.width < 10 || eyeCrop.height < 10) {
             if (eyeCrop != faceBitmap) eyeCrop.recycle()
             if (landmarkInputBitmap != faceBitmap) landmarkInputBitmap.recycle()
-            return@withContext PoseResult(0f, 0f, 0f, landmarkPostprocess.score, landmarkPostprocess.eyeLandmarks)
+            return@withContext PoseResult(
+                yaw = 0f,
+                pitch = 0f,
+                roll = 0f,
+                eyeAspectRatio = landmarkPostprocess.eyeAspectRatio,
+                landmarkScore = landmarkPostprocess.score,
+                eyeLandmarks = landmarkPostprocess.eyeLandmarks
+            )
         }
         
         val eyeGazeInputFloats = BenchmarkRegistry.trace(BenchmarkRegistry.eyegazePreprocess, "eyegaze_preprocess") {
@@ -158,6 +170,7 @@ class HeadPoseEstimator(private val context: Context) {
                 yaw = yawDeg,
                 pitch = pitchDeg,
                 roll = 0f,
+                eyeAspectRatio = landmarkPostprocess.eyeAspectRatio,
                 landmarkScore = landmarkPostprocess.score,
                 eyeLandmarks = landmarkPostprocess.eyeLandmarks
             )
@@ -210,9 +223,56 @@ class HeadPoseEstimator(private val context: Context) {
         return landmarks[index * 3] to landmarks[index * 3 + 1]
     }
 
+    private fun normalizeLandmarks(landmarks: FloatArray): FloatArray {
+        var maxAbsCoordinate = 0f
+        var i = 0
+        while (i + 1 < landmarks.size) {
+            maxAbsCoordinate = kotlin.math.max(maxAbsCoordinate, abs(landmarks[i]))
+            maxAbsCoordinate = kotlin.math.max(maxAbsCoordinate, abs(landmarks[i + 1]))
+            i += 3
+        }
+
+        if (maxAbsCoordinate <= 2f) return landmarks
+
+        return FloatArray(landmarks.size) { i ->
+            if (i % 3 == 2) landmarks[i] else landmarks[i] / LANDMARK_INPUT_SIZE
+        }
+    }
+
+    private fun estimateEyeAspectRatio(landmarks: FloatArray): Float {
+        val left = eyeAspectRatio(landmarks, outer = 33, inner = 133, upper = 159, lower = 145)
+        val right = eyeAspectRatio(landmarks, outer = 362, inner = 263, upper = 386, lower = 374)
+        return (left + right) / 2f
+    }
+
+    private fun eyeAspectRatio(
+        landmarks: FloatArray,
+        outer: Int,
+        inner: Int,
+        upper: Int,
+        lower: Int
+    ): Float {
+        val width = distance(landmarks, outer, inner)
+        if (width <= 0f) return 0f
+        return distance(landmarks, upper, lower) / width
+    }
+
+    private fun distance(landmarks: FloatArray, a: Int, b: Int): Float {
+        val ax = landmarks[a * 3]
+        val ay = landmarks[a * 3 + 1]
+        val bx = landmarks[b * 3]
+        val by = landmarks[b * 3 + 1]
+        return hypot((ax - bx).toDouble(), (ay - by).toDouble()).toFloat()
+    }
+
     private data class LandmarkPostprocessResult(
         val eyeRect: RectF,
         val score: Float?,
+        val eyeAspectRatio: Float,
         val eyeLandmarks: EyeLandmarkMetadata
     )
+
+    private companion object {
+        const val LANDMARK_INPUT_SIZE = 192f
+    }
 }

@@ -59,6 +59,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : ComponentActivity() {
 
@@ -73,6 +74,7 @@ class MainActivity : ComponentActivity() {
     @Volatile private var lastPhase: SessionPhase? = null
     @Volatile private var recordingModeEnabled = false
     @Volatile private var stampFramesEnabled = false
+    private val isProcessingFrame = AtomicBoolean(false)
     private var benchmarkDumpJob: Job? = null
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -314,6 +316,10 @@ class MainActivity : ComponentActivity() {
             imageProxy.close()
             return
         }
+        if (!isProcessingFrame.compareAndSet(false, true)) {
+            imageProxy.close()
+            return
+        }
 
         val bitmap: Bitmap
         val rotatedBitmap: Bitmap
@@ -331,6 +337,7 @@ class MainActivity : ComponentActivity() {
             rotatedBitmap = converted.second
         } catch (e: Exception) {
             Log.e("FocusGuard_Camera", "Frame preprocessing failed", e)
+            isProcessingFrame.set(false)
             imageProxy.close()
             return
         }
@@ -363,6 +370,7 @@ class MainActivity : ComponentActivity() {
                 if (rotatedBitmap != bitmap) rotatedBitmap.recycle()
                 bitmap.recycle()
                 imageProxy.close()
+                isProcessingFrame.set(false)
             }
         }
     }
@@ -414,12 +422,16 @@ class MainActivity : ComponentActivity() {
 
                 frameCounter++
                 if (frameCounter >= 15) {
+                    val detectedSignals = signalBuffer.filter { it.faceDetected }
+                    val poseSignals = detectedSignals.ifEmpty { signalBuffer.toList() }
                     val averagedSignal = AttentionSignal(
                         faceDetected = signalBuffer.count { it.faceDetected } > signalBuffer.size / 2,
-                        yaw = signalBuffer.map { it.yaw }.average().toFloat() - (baselineYaw ?: 0f),
-                        pitch = signalBuffer.map { it.pitch }.average().toFloat() - (baselinePitch ?: 0f),
+                        yaw = poseSignals.map { it.yaw }.average().toFloat() - (baselineYaw ?: 0f),
+                        pitch = poseSignals.map { it.pitch }.average().toFloat() - (baselinePitch ?: 0f),
                         roll = 0f,
-                        eyeAspectRatio = signalBuffer.map { it.eyeAspectRatio }.average().toFloat()
+                        eyeAspectRatio = poseSignals.map { it.eyeAspectRatio }.average().toFloat(),
+                        faceConfidence = detectedSignals.map { it.faceConfidence }.averageOrZero(),
+                        eyeConfidence = detectedSignals.map { it.eyeConfidence }.averageOrZero()
                     )
                     SessionManager.onAttentionSignal(averagedSignal, frameDeltaSeconds = 1f)
                     Log.d("FocusGuard_Camera", "Averaged signal sent: $averagedSignal")
@@ -427,5 +439,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun List<Float>.averageOrZero(): Float {
+        return if (isEmpty()) 0f else average().toFloat()
     }
 }

@@ -152,4 +152,4 @@ Everyone should use dummy/hardcoded AttentionSignal and SessionState values unti
 - Emergency calls (com.android.dialer) always whitelisted in Accessibility Service
 - All models must be .tflite format from Qualcomm AI Hub
 - Repo must be public, open source licensed, with README by submission deadline 1:30pm May 1
-- Use of AI coding tools (Claude, Gemini, Copilot) explicitly permitted by organizers
+- Use of AI coding tools (Claude, Gemini, Copilot) explicitly permitted by organizers`

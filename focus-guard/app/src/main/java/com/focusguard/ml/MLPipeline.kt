@@ -28,7 +28,6 @@ import com.focusguard.instrumentation.BenchmarkRegistry
 class MLPipeline(context: Context) {
     private val faceDetector = FaceDetector(context)
     private val headPoseEstimator = HeadPoseEstimator(context)
-    private val eyeOpenEstimator = EyeOpenEstimator()
 
     var onAttentionSignal: ((AttentionSignal) -> Unit)? = null
     @Volatile var latestQualityMetadata: QualityFrameMetadata? = null
@@ -48,25 +47,31 @@ class MLPipeline(context: Context) {
         val signal = BenchmarkRegistry.trace(BenchmarkRegistry.endToEnd, "end_to_end") {
             when (val result = faceDetector.detect(frameBitmap)) {
                 is FaceDetectionResult.Detected -> {
-                    val pose = headPoseEstimator.estimate(result.faceCrop)
-                    val eyes = eyeOpenEstimator.estimate(result.faceCrop)
+                    try {
+                        val pose = headPoseEstimator.estimate(result.faceCrop)
+                        val faceDetected = result.faceCrop.confidence >= FACE_CONFIDENCE_THRESHOLD
 
-                    AttentionSignal(
-                        faceDetected = result.faceCrop.confidence >= FACE_CONFIDENCE_THRESHOLD,
-                        yaw = pose.yaw,
-                        pitch = pose.pitch,
-                        roll = pose.roll,
-                        eyeAspectRatio = eyes.eyeAspectRatio
-                    ).also {
-                        latestQualityMetadata = QualityFrameMetadata(
-                            faceDetected = result.faceCrop.confidence >= FACE_CONFIDENCE_THRESHOLD,
-                            faceBBox = result.faceCrop.bounds,
+                        AttentionSignal(
+                            faceDetected = faceDetected,
+                            yaw = pose.yaw,
+                            pitch = pose.pitch,
+                            roll = pose.roll,
+                            eyeAspectRatio = pose.eyeAspectRatio,
                             faceConfidence = result.faceCrop.confidence,
-                            landmarkScore = pose.landmarkScore,
-                            eyeLandmarks = pose.eyeLandmarks,
-                            rawPitchDeg = pose.pitch,
-                            rawYawDeg = pose.yaw
-                        )
+                            eyeConfidence = pose.landmarkScore ?: 0f
+                        ).also {
+                            latestQualityMetadata = QualityFrameMetadata(
+                                faceDetected = faceDetected,
+                                faceBBox = result.faceCrop.bounds,
+                                faceConfidence = result.faceCrop.confidence,
+                                landmarkScore = pose.landmarkScore,
+                                eyeLandmarks = pose.eyeLandmarks,
+                                rawPitchDeg = pose.pitch,
+                                rawYawDeg = pose.yaw
+                            )
+                        }
+                    } finally {
+                        result.faceCrop.bitmap.recycle()
                     }
                 }
 

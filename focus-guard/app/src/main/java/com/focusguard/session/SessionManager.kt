@@ -277,7 +277,9 @@ object SessionManager {
             yaw = yaw,
             pitch = pitch,
             roll = roll,
-            eyeAspectRatio = eyeAspectRatio
+            eyeAspectRatio = eyeAspectRatio,
+            faceConfidence = faceConfidence,
+            eyeConfidence = eyeConfidence
         )
     }
 
