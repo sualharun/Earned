@@ -419,6 +419,7 @@ class MainActivity : ComponentActivity() {
                 frameCounter++
                 if (frameCounter >= 15) {
                     val focusedFrames = signalBuffer.filter { it.faceDetected }
+                    val recentFrames = signalBuffer.takeLast(15)
                     val averagedSignal = AttentionSignal(
                         faceDetected = signalBuffer.count { it.faceDetected } > signalBuffer.size / 2,
                         yaw = if (focusedFrames.isEmpty()) {
@@ -432,7 +433,7 @@ class MainActivity : ComponentActivity() {
                             focusedFrames.map { it.pitch }.average().toFloat() - (baselinePitch ?: 0f)
                         },
                         roll = 0f,
-                        eyeAspectRatio = signalBuffer.map { it.eyeAspectRatio }.average().toFloat(),
+                        eyeAspectRatio = recentFrames.map { it.eyeAspectRatio }.average().toFloat(),
                         faceConfidence = focusedFrames.map { it.faceConfidence }.averageOrZero(),
                         eyeConfidence = focusedFrames.map { it.eyeConfidence }.averageOrZero()
                     )
