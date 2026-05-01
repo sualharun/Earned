@@ -9,8 +9,6 @@ import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.focusguard.pet.PetAssets
-import com.focusguard.pet.PetSpecies
 import com.focusguard.service.AccessibilityServiceStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,24 +26,28 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.WeekFields
 import java.util.Locale
+import java.util.UUID
 import kotlin.math.roundToInt
 
 private val Context.earnedItDataStore by preferencesDataStore("earnedit_state")
 private val stateJsonKey = stringPreferencesKey("state_json_v1")
+private const val InitialPetFullness = 50
+private const val InitialPetMood = "Ready"
 
 data class PetProfile(
     val name: String = "Kitsu",
     val species: String = "kitsu",
     val stage: Int = 1,
-    val fullness: Int = 84,
-    val mood: String = "Happy",
+    val fullness: Int = InitialPetFullness,
+    val mood: String = InitialPetMood,
     val lastFedMs: Long = 0L,
     val equippedCosmetic: String = ""
 )
 
 data class UserProfile(
     val displayName: String = "Sanjiv",
-    val username: String = "sual"
+    val username: String = "",
+    val id: String = ""
 )
 
 data class FocusSessionSummary(
@@ -189,15 +191,25 @@ object EarnedItStore {
         scope.launch {
             context.applicationContext.earnedItDataStore.data
                 .catch {
-                    _state.value = EarnedItUiState(loaded = true)
+                    _state.value = EarnedItUiState(loaded = true).withStableUserIdentity()
                 }
                 .collect { preferences ->
                     val stored = preferences[stateJsonKey]
                     _state.value = if (stored.isNullOrBlank()) {
                         EarnedItUiState(loaded = true, permissions = readPermissions(context.applicationContext))
+                            .withStableUserIdentity()
                     } else {
-                        runCatching { EarnedItJson.decode(stored).copy(loaded = true, permissions = readPermissions(context.applicationContext)) }
-                            .getOrElse { EarnedItUiState(loaded = true, permissions = readPermissions(context.applicationContext)) }
+                        runCatching {
+                            EarnedItJson.decode(stored)
+                                .withNormalizedPetStage()
+                                .withFreshPetBaseline()
+                                .withStableUserIdentity()
+                                .copy(loaded = true, permissions = readPermissions(context.applicationContext))
+                        }
+                            .getOrElse {
+                                EarnedItUiState(loaded = true, permissions = readPermissions(context.applicationContext))
+                                    .withStableUserIdentity()
+                            }
                     }
                 }
         }
@@ -213,15 +225,15 @@ object EarnedItStore {
 
     fun pickPet(species: String, name: String) {
         mutate { state ->
-            val unlockedStage = (state.lifetimeFocusMinutes / 120 + 1).coerceIn(1, 5)
-            val displayStage = PetAssets.nextDisplayStage(PetSpecies.fromId(species), unlockedStage)
             state.copy(
                 pet = state.pet.copy(
                     species = species,
                     name = name.ifBlank { species.replaceFirstChar { c -> c.uppercase() } },
-                    stage = displayStage,
-                    fullness = 84,
-                    mood = "Happy"
+                    stage = 1,
+                    fullness = InitialPetFullness,
+                    mood = InitialPetMood,
+                    lastFedMs = 0L,
+                    equippedCosmetic = ""
                 ),
                 unlockedPetSpecies = (state.unlockedPetSpecies + species).distinct()
             ).withPrivacyEvent("pet", "Pet selected", "Your local pet profile was updated.")
@@ -230,15 +242,13 @@ object EarnedItStore {
 
     fun pickPetVersion(species: String, name: String, stage: Int) {
         mutate { state ->
-            val unlockedStage = (state.lifetimeFocusMinutes / 120 + 1).coerceIn(1, 5)
-            val displayStage = PetAssets.displayStage(PetSpecies.fromId(species), stage.coerceIn(1, unlockedStage))
             state.copy(
                 pet = state.pet.copy(
                     species = species,
                     name = name.ifBlank { species.replaceFirstChar { c -> c.uppercase() } },
-                    stage = displayStage,
-                    fullness = 84,
-                    mood = "Happy"
+                    stage = stage.coerceIn(1, unlockedPetStageFor(state.lifetimeFocusMinutes)),
+                    fullness = state.pet.fullness.coerceIn(0, 100),
+                    mood = state.pet.mood.ifBlank { InitialPetMood }
                 ),
                 unlockedPetSpecies = (state.unlockedPetSpecies + species).distinct()
             ).withPrivacyEvent("pet", "Pet version selected", "Your local pet profile was updated.")
@@ -344,14 +354,13 @@ object EarnedItStore {
                 detail = "${durationMinutes} minute session at ${score}% focus.",
                 timestampMs = now
             )
-            val nextStage = ((state.lifetimeFocusMinutes + durationMinutes) / 120 + 1).coerceIn(1, 5)
-            val displayStage = PetAssets.nextDisplayStage(PetSpecies.fromId(state.pet.species), nextStage)
+            val nextStage = petStageForLifetimeFocus(state.lifetimeFocusMinutes + durationMinutes)
             val updated = state.copy(
                 points = state.points + points,
                 allSessions = (listOf(session) + state.allSessions).take(250),
                 timeBankTransactions = (if (bankMinutes > 0) listOf(transaction) else emptyList()) + state.timeBankTransactions,
                 pet = state.pet.copy(
-                    stage = displayStage,
+                    stage = nextStage,
                     fullness = (state.pet.fullness + if (success) 8 else -6).coerceIn(0, 100),
                     mood = when {
                         success && score >= 90 -> "Energized"
@@ -407,6 +416,13 @@ object EarnedItStore {
             ).withPrivacyEvent("store", "Store purchase", "$itemName purchased locally for $price points.")
         }
         return PurchaseResult.Success
+    }
+
+    fun equipPetCosmetic(itemName: String) {
+        mutate { state ->
+            state.copy(pet = state.pet.copy(equippedCosmetic = itemName))
+                .withPrivacyEvent("store", "Pet cosmetic equipped", "$itemName equipped locally.")
+        }
     }
 
     fun redeemTimeBank(minutes: Int, rewardApp: String): Boolean {
@@ -468,6 +484,45 @@ object EarnedItStore {
         }
     }
 
+    fun updateSocialProfile(displayName: String, username: String) {
+        val cleanUsername = username.trim()
+            .lowercase(Locale.US)
+            .replace(Regex("[^a-z0-9_\\.]"), "")
+            .take(24)
+        mutate { state ->
+            state.copy(
+                profile = state.profile.copy(
+                    displayName = displayName.trim().ifBlank { state.profile.displayName },
+                    username = cleanUsername.ifBlank { state.profile.username }
+                )
+            ).withPrivacyEvent("social", "Social profile updated", "Username and display name updated locally.")
+        }
+    }
+
+    fun setDemoMode(enabled: Boolean) {
+        if (enabled) {
+            mutate { state ->
+                val seeded = seedDemoState()
+                seeded.copy(
+                    onboardingComplete = true,
+                    loaded = true,
+                    permissions = state.permissions,
+                    settings = seeded.settings.copy(
+                        notificationsEnabled = state.settings.notificationsEnabled,
+                        hapticsEnabled = state.settings.hapticsEnabled,
+                        strictBlockingEnabled = state.settings.strictBlockingEnabled,
+                        demoModeEnabled = true
+                    )
+                ).withPrivacyEvent("settings", "Demo mode enabled", "Seeded points, pet progress, sessions, and reward history.")
+            }
+        } else {
+            mutate { state ->
+                state.copy(settings = state.settings.copy(demoModeEnabled = false))
+                    .withPrivacyEvent("settings", "Demo mode disabled", "Kept existing local data and stopped demo reseeding.")
+            }
+        }
+    }
+
     fun clearSessionHistory() {
         mutate { state ->
             state.copy(
@@ -479,7 +534,7 @@ object EarnedItStore {
     }
 
     fun resetDemoData() {
-        mutate { seedDemoState().copy(onboardingComplete = true, loaded = true) }
+        setDemoMode(true)
     }
 
     private fun mutate(reducer: (EarnedItUiState) -> EarnedItUiState) {
@@ -510,21 +565,26 @@ fun seedDemoState(): EarnedItUiState {
     val sessions = listOf(
         FocusSessionSummary(now - 3_600_000L, 45, 91, true, 140, 1, now - 6_300_000L, now - 3_600_000L, 45, false, listOf("Instagram"), 9, 42),
         FocusSessionSummary(now - 86_400_000L, 25, 84, true, 105, 2, now - 87_900_000L, now - 86_400_000L, 25, false, listOf("TikTok"), 5, 58),
-        FocusSessionSummary(now - 172_800_000L, 50, 94, true, 175, 0, now - 175_800_000L, now - 172_800_000L, 50, false, listOf("YouTube"), 10, 0)
+        FocusSessionSummary(now - 172_800_000L, 50, 94, true, 175, 0, now - 175_800_000L, now - 172_800_000L, 50, false, listOf("YouTube"), 10, 0),
+        FocusSessionSummary(now - 259_200_000L, 90, 89, true, 315, 1, now - 264_600_000L, now - 259_200_000L, 90, false, listOf("Instagram", "Discord"), 18, 28),
+        FocusSessionSummary(now - 345_600_000L, 60, 96, true, 235, 0, now - 349_200_000L, now - 345_600_000L, 60, false, listOf("TikTok"), 12, 0)
     )
     return EarnedItUiState(
         onboardingComplete = true,
-        profile = UserProfile("Sanjiv", "sual"),
-        points = 2840,
-        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 3, fullness = 78, mood = "Happy"),
-        unlockedPetSpecies = listOf("kitsu"),
-        unlockedFocusBackgrounds = listOf("cozy_desk"),
+        profile = UserProfile("Sanjiv", "sual", "00000000-0000-4000-8000-000000000001"),
+        points = 50_000,
+        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 3, fullness = 92, mood = "Energized", equippedCosmetic = "Lumi scarf"),
+        unlockedPetSpecies = listOf("kitsu", "lumi", "owly"),
+        unlockedFocusBackgrounds = listOf("cozy_desk", "balcony_night"),
         selectedFocusBackground = "cozy_desk",
         allSessions = sessions,
         timeBankTransactions = listOf(
             TimeBankTransaction(now - 3_600_000L, "earn", 9, "+9m earned", "45 minute session at 91% focus.", now - 3_600_000L),
             TimeBankTransaction(now - 5_400_000L, "redeem", -15, "-15m reserved", "YouTube reward pass after homework.", now - 5_400_000L, "YouTube"),
-            TimeBankTransaction(now - 86_400_000L, "earn", 5, "+5m earned", "25 minute session at 84% focus.", now - 86_400_000L)
+            TimeBankTransaction(now - 86_400_000L, "earn", 5, "+5m earned", "25 minute session at 84% focus.", now - 86_400_000L),
+            TimeBankTransaction(now - 259_200_000L, "earn", 18, "+18m earned", "90 minute session at 89% focus.", now - 259_200_000L),
+            TimeBankTransaction(now - 345_600_000L, "earn", 12, "+12m earned", "60 minute session at 96% focus.", now - 345_600_000L),
+            TimeBankTransaction(now - 604_800_000L, "earn", 180, "+180m demo grant", "Judge demo balance for reward redemption.", now - 604_800_000L)
         ),
         storePurchases = listOf(StorePurchase(now - 120_000L, "lumi_scarf", "Lumi scarf", "Pet", 260, now - 120_000L, true)),
         scheduledBlocks = listOf(
@@ -547,6 +607,40 @@ private fun EarnedItUiState.withPrivacyEvent(type: String, title: String, detail
         privacyEvents = (listOf(PrivacyEvent(now, type, title, detail, now)) + privacyEvents).take(80)
     )
 }
+
+private fun EarnedItUiState.withFreshPetBaseline(): EarnedItUiState {
+    val hasProgress = points > 0 ||
+        allSessions.isNotEmpty() ||
+        timeBankTransactions.isNotEmpty() ||
+        storePurchases.isNotEmpty() ||
+        pet.lastFedMs > 0L ||
+        pet.stage > 1 ||
+        pet.equippedCosmetic.isNotBlank()
+
+    val looksLikeOldFreshPet = !hasProgress &&
+        pet.fullness == 84 &&
+        pet.mood == "Happy"
+
+    return if (looksLikeOldFreshPet) {
+        copy(pet = pet.copy(fullness = InitialPetFullness, mood = InitialPetMood))
+    } else {
+        this
+    }
+}
+
+private fun EarnedItUiState.withNormalizedPetStage(): EarnedItUiState =
+    copy(pet = pet.copy(stage = pet.stage.coerceIn(1, 5)))
+
+private fun EarnedItUiState.withStableUserIdentity(): EarnedItUiState {
+    val id = profile.id.ifBlank { UUID.randomUUID().toString() }
+    val username = profile.username.ifBlank { "focus_${id.take(8)}" }
+    return copy(profile = profile.copy(id = id, username = username))
+}
+
+private fun unlockedPetStageFor(minutes: Int): Int = petStageForLifetimeFocus(minutes)
+
+private fun petStageForLifetimeFocus(minutes: Int): Int =
+    (minutes / 120 + 1).coerceIn(1, 5)
 
 private fun calculateStreakDays(sessions: List<FocusSessionSummary>): Int {
     val successDays = sessions.filter { it.success }
@@ -628,8 +722,8 @@ private object EarnedItJson {
             profile = decodeProfile(objectJson.optJSONObject("profile")),
             points = objectJson.optInt("points", 0),
             pet = decodePet(objectJson.optJSONObject("pet")),
-            unlockedPetSpecies = decodeUnlockedPets(objectJson),
-            unlockedFocusBackgrounds = decodeUnlockedBackgrounds(objectJson),
+            unlockedPetSpecies = objectJson.optJSONArray("unlockedPetSpecies").strings().ifEmpty { listOf("kitsu") },
+            unlockedFocusBackgrounds = objectJson.optJSONArray("unlockedFocusBackgrounds").strings().ifEmpty { listOf("cozy_desk") },
             selectedFocusBackground = objectJson.optString("selectedFocusBackground", "cozy_desk"),
             allSessions = objectJson.optJSONArray("sessions").toList(::decodeSession),
             timeBankTransactions = objectJson.optJSONArray("timeBankTransactions").toList(::decodeTransaction),
@@ -655,35 +749,21 @@ private object EarnedItJson {
         name = json?.optString("name", "Kitsu") ?: "Kitsu",
         species = json?.optString("species", "kitsu") ?: "kitsu",
         stage = json?.optInt("stage", 1) ?: 1,
-        fullness = json?.optInt("fullness", 84) ?: 84,
-        mood = json?.optString("mood", "Happy") ?: "Happy",
+        fullness = json?.optInt("fullness", InitialPetFullness) ?: InitialPetFullness,
+        mood = json?.optString("mood", InitialPetMood) ?: InitialPetMood,
         lastFedMs = json?.optLong("lastFedMs", 0L) ?: 0L,
         equippedCosmetic = json?.optString("equippedCosmetic", "") ?: ""
     )
 
-    private fun decodeUnlockedPets(json: JSONObject): List<String> {
-        val currentSpecies = json.optJSONObject("pet")?.optString("species", "kitsu") ?: "kitsu"
-        val stored = json.optJSONArray("unlockedPetSpecies")
-            ?.let { array -> (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) } }
-            .orEmpty()
-        return (stored + currentSpecies).distinct().ifEmpty { listOf("kitsu") }
-    }
-
-    private fun decodeUnlockedBackgrounds(json: JSONObject): List<String> {
-        val selected = json.optString("selectedFocusBackground", "cozy_desk")
-        val stored = json.optJSONArray("unlockedFocusBackgrounds")
-            ?.let { array -> (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) } }
-            .orEmpty()
-        return (stored + selected + "cozy_desk").distinct()
-    }
-
     private fun encodeProfile(value: UserProfile) = JSONObject()
         .put("displayName", value.displayName)
         .put("username", value.username)
+        .put("id", value.id)
 
     private fun decodeProfile(json: JSONObject?) = UserProfile(
         displayName = json?.optString("displayName", "Sanjiv") ?: "Sanjiv",
-        username = json?.optString("username", "sual") ?: "sual"
+        username = json?.optString("username", "") ?: "",
+        id = json?.optString("id", "") ?: ""
     )
 
     private fun encodeSession(value: FocusSessionSummary) = JSONObject()

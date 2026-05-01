@@ -341,7 +341,7 @@ private fun FocusCompanionHero(
         Box(modifier = Modifier.fillMaxSize()) {
             Crossfade(
                 targetState = heroSceneRes(pet.species, pet.stage, background.id, phase),
-                animationSpec = tween(1250, easing = EaseInOutCubic),
+                animationSpec = tween(850, easing = EaseInOutCubic),
                 label = "focus_scene_phase"
             ) { sceneRes ->
                 Image(

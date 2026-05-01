@@ -1,297 +1,466 @@
 package com.focusguard.ui
 
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.focusguard.R
 import com.focusguard.state.EarnedItStore
 import com.focusguard.state.PetProfile
 import com.focusguard.ui.theme.EarnedColors
+import kotlinx.coroutines.launch
 
-private data class WelcomeSlide(
+private val OnboardingTitleColor = Color(0xFF1F3D24)
+private val OnboardingSubtitleColor = Color(0xFF1F3D24).copy(alpha = 0.65f)
+
+private data class OnboardingPage(
     val title: String,
     val subtitle: String,
-    val body: String,
-    val icon: ImageVector
+    @DrawableRes val hero: Int? = null
 )
 
-private val welcomeSlides = listOf(
-    WelcomeSlide(
-        "EarnedIt",
-        "Focus, verified.\nRewards, earned.",
-        "Lock distracting apps during study sessions and earn points for verified focus.",
-        Icons.Filled.Star
+private val onboardingPages = listOf(
+    OnboardingPage(
+        "Earn your\ntime back",
+        "Lock distractions.\nFocus deeply.\nSpend rewards later.",
+        R.drawable.onboarding_welcome
     ),
-    WelcomeSlide(
-        "On-device verification",
-        "We watch the work, not you.",
-        "Camera and microphone signals stay on your phone while EarnedIt checks presence, posture, and environment.",
-        Icons.Filled.CameraAlt
+    OnboardingPage(
+        "Focus stays\non your phone",
+        "Attention signals run locally.\nNo frames uploaded.",
+        R.drawable.onboarding_privacy
     ),
-    WelcomeSlide(
-        "Real consequences",
-        "Apps stay locked until you earn them.",
-        "Pick the apps that pull you away. They stay blocked during focus sessions.",
-        Icons.Filled.Shield
+    OnboardingPage(
+        "Pick what\ngets locked",
+        "Choose the apps\nthat pull you away.",
+        R.drawable.onboarding_lock_apps
+    ),
+    OnboardingPage(
+        "Grow a\nfocus pet",
+        "Your pet evolves\nwhen sessions go well.",
+        null
+    ),
+    OnboardingPage(
+        "Spend rewards\nafter focus",
+        "Focused minutes become\nearned app time.",
+        R.drawable.onboarding_rewards
     )
-)
-
-private val permissionSteps = listOf(
-    Triple("Camera", "Verify you are present and focused at your desk.", Icons.Filled.CameraAlt),
-    Triple("Microphone", "Detect distracting audio like conversation or TV.", Icons.Filled.Mic),
-    Triple("Usage Stats", "See which app is in the foreground during a session.", Icons.Filled.PhoneAndroid),
-    Triple("Draw Over Apps", "Show the EarnedIt block screen over locked apps.", Icons.Filled.Security),
-    Triple("Background Run", "Keep your session alive while you study.", Icons.Filled.Star)
 )
 
 @Composable
 fun OnboardingScreen(onComplete: () -> Unit) {
-    var step by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(pageCount = { onboardingPages.size })
     var selectedSpecies by remember { mutableStateOf("kitsu") }
-    var petName by remember { mutableStateOf("Kitsu") }
-    val totalSteps = welcomeSlides.size + 1 + permissionSteps.size
-    val petStep = welcomeSlides.size
-    val permissionIndex = step - petStep - 1
+    val haptics = rememberHaptics()
 
-    Column(
+    val isLast = pagerState.currentPage == onboardingPages.lastIndex
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        EarnedColors.Primary.copy(alpha = 0.12f),
-                        MaterialTheme.colorScheme.background,
-                        EarnedColors.Focus.copy(alpha = 0.10f)
-                    )
-                )
-            )
-            .padding(horizontal = 24.dp, vertical = 36.dp)
+            .background(EarnedColors.LightBg)
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
-            repeat(totalSteps) { index ->
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(4.dp)
-                        .background(
-                            if (index <= step) EarnedColors.Primary else MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(4.dp)
-                        )
-                )
-            }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            OnboardingPageContent(
+                data = onboardingPages[page],
+                petSpecies = selectedSpecies,
+                onSpecies = { selectedSpecies = it }
+            )
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentAlignment = Alignment.Center
-        ) {
-            when {
-                step < welcomeSlides.size -> WelcomeStep(welcomeSlides[step])
-                step == petStep -> PetOnboardingStep(
-                    species = selectedSpecies,
-                    name = petName,
-                    onSpecies = {
-                        selectedSpecies = it
-                        petName = it.replaceFirstChar { c -> c.uppercase() }
-                    },
-                    onName = { petName = it.take(20) }
-                )
-                else -> PermissionStep(permissionSteps[permissionIndex])
-            }
-        }
-
-        Button(
+        val backVisibility by animateFloatAsState(
+            targetValue = if (pagerState.currentPage > 0) 1f else 0f,
+            label = "backAlpha"
+        )
+        Surface(
             onClick = {
-                if (step + 1 >= totalSteps) {
-                    EarnedItStore.pickPet(selectedSpecies, petName)
-                    EarnedItStore.finalizeOnboarding()
-                    onComplete()
-                } else {
-                    step += 1
+                if (pagerState.currentPage > 0) {
+                    haptics.tap()
+                    scope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                    }
                 }
             },
             modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = EarnedColors.Primary, contentColor = Color.White)
+                .align(Alignment.TopStart)
+                .padding(start = 16.dp, top = 36.dp)
+                .size(40.dp)
+                .alpha(backVisibility),
+            enabled = pagerState.currentPage > 0,
+            shape = CircleShape,
+            color = Color.White.copy(alpha = 0.85f),
+            shadowElevation = 1.dp
         ) {
-            Text(
-                when {
-                    step + 1 >= totalSteps -> "Start using EarnedIt"
-                    step == petStep -> "Hatch my pet"
-                    step > petStep -> "Continue"
-                    else -> "Continue"
-                },
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.width(6.dp))
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
-        }
-    }
-}
-
-@Composable
-private fun WelcomeStep(slide: WelcomeSlide) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(
-            shape = RoundedCornerShape(30.dp),
-            color = EarnedColors.Primary,
-            shadowElevation = 10.dp,
-            modifier = Modifier.size(if (slide.title == "EarnedIt") 112.dp else 96.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(slide.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(52.dp))
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = OnboardingTitleColor,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
-        Spacer(Modifier.height(28.dp))
-        Text(slide.title, fontSize = 38.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-        Text(
-            slide.subtitle,
-            modifier = Modifier.padding(top = 12.dp),
-            fontSize = 24.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = EarnedColors.Primary,
-            textAlign = TextAlign.Center
-        )
-        Text(
-            slide.body,
-            modifier = Modifier.padding(top = 22.dp),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            lineHeight = 22.sp
-        )
-    }
-}
 
-@Composable
-private fun PetOnboardingStep(
-    species: String,
-    name: String,
-    onSpecies: (String) -> Unit,
-    onName: (String) -> Unit
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        PetSprite(PetProfile(name = name, species = species, stage = 1), size = 138.dp)
-        Spacer(Modifier.height(18.dp))
-        Text("Pick your focus pet", fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        Text(
-            "Your pet evolves with every focused minute.",
-            modifier = Modifier.padding(top = 8.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(24.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            listOf("kitsu", "lumi", "owly").forEach { id ->
-                val selected = id == species
-                Surface(
+        // Fixed bottom bar — dots + CTA, sits over the cream-faded zone of every slide
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            DotIndicator(
+                count = onboardingPages.size,
+                current = pagerState.currentPage
+            )
+            Spacer(Modifier.height(18.dp))
+            Crossfade(targetState = isLast, label = "ctaLabel") { last ->
+                Button(
+                    onClick = {
+                        if (last) {
+                            haptics.confirm()
+                            val petName = selectedSpecies.replaceFirstChar { it.uppercase() }
+                            EarnedItStore.pickPet(selectedSpecies, petName)
+                            EarnedItStore.finalizeOnboarding()
+                            onComplete()
+                        } else {
+                            haptics.tap()
+                            scope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                            }
+                        }
+                    },
                     modifier = Modifier
-                        .weight(1f)
-                        .clickable { onSpecies(id) }
-                        .border(
-                            width = if (selected) 2.dp else 1.dp,
-                            color = if (selected) EarnedColors.Primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-                            shape = RoundedCornerShape(16.dp)
-                        ),
-                    shape = RoundedCornerShape(16.dp),
-                    color = if (selected) EarnedColors.Primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = EarnedColors.Primary,
+                        contentColor = Color.White
+                    )
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 12.dp)) {
-                        PetSprite(PetProfile(species = id, name = id, stage = 1), size = 54.dp, glow = false)
-                        Text(id.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    }
+                    Text(
+                        if (last) "Let's go!" else "Next",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
-        Spacer(Modifier.height(20.dp))
-        OutlinedTextField(
-            value = name,
-            onValueChange = onName,
-            label = { Text("Name your pet") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
     }
 }
 
 @Composable
-private fun PermissionStep(step: Triple<String, String, ImageVector>) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.size(96.dp)
+private fun OnboardingPageContent(
+    data: OnboardingPage,
+    petSpecies: String,
+    onSpecies: (String) -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (data.hero != null) {
+            Image(
+                painter = painterResource(id = data.hero),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            )
+            // Localized cream halo behind the title/subtitle. The base radial
+            // brush is a circle whose radius is *smaller* than centerY — that
+            // way the natural alpha-to-zero edge of the brush sits inside the
+            // visible box on every side (no edge gets clipped into a hard
+            // horizontal line). graphicsLayer then stretches it horizontally
+            // (scaleX > 1) to give the halo a rectangular/capsule feel without
+            // touching the vertical fade.
+            BoxWithConstraints(modifier = Modifier.matchParentSize()) {
+                val density = LocalDensity.current
+                val centerX = with(density) { maxWidth.toPx() / 2f }
+                val centerY = with(density) { 130.dp.toPx() }
+                val radius = with(density) { 120.dp.toPx() }
+                val originY = centerY / with(density) { maxHeight.toPx() }
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .graphicsLayer(
+                            scaleX = 1.6f,
+                            transformOrigin = TransformOrigin(0.5f, originY)
+                        )
+                        .background(
+                            Brush.radialGradient(
+                                colorStops = arrayOf(
+                                    0.00f to EarnedColors.LightBg,
+                                    0.55f to EarnedColors.LightBg.copy(alpha = 0.97f),
+                                    0.78f to EarnedColors.LightBg.copy(alpha = 0.85f),
+                                    0.92f to EarnedColors.LightBg.copy(alpha = 0.30f),
+                                    1.00f to Color.Transparent
+                                ),
+                                center = Offset(centerX, centerY),
+                                radius = radius
+                            )
+                        )
+                )
+            }
+            // Bottom fade — held transparent through the image, then a fast,
+            // late ramp so the image is fully cream well before the dots/CTA.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.00f to Color.Transparent,
+                                0.74f to Color.Transparent,
+                                0.80f to EarnedColors.LightBg.copy(alpha = 0.85f),
+                                0.84f to EarnedColors.LightBg,
+                                1.00f to EarnedColors.LightBg
+                            )
+                        )
+                    )
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(step.third, contentDescription = null, tint = EarnedColors.Primary, modifier = Modifier.size(48.dp))
+            Spacer(Modifier.height(32.dp))
+
+            Text(
+                text = data.title,
+                color = OnboardingTitleColor,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Serif,
+                lineHeight = 36.sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                text = data.subtitle,
+                color = OnboardingSubtitleColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 22.sp,
+                textAlign = TextAlign.Center
+            )
+
+            if (data.hero == null) {
+                Spacer(Modifier.height(28.dp))
+                PetPickerHero(
+                    species = petSpecies,
+                    onSpecies = onSpecies
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+            // Reserve space so content doesn't slide under the fixed bottom bar
+            Spacer(Modifier.height(150.dp))
+        }
+    }
+}
+
+@Composable
+private fun DotIndicator(
+    count: Int,
+    current: Int,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        repeat(count) { index ->
+            val active = index == current
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 6.dp)
+                    .size(11.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (active) EarnedColors.Focus
+                        else OnboardingTitleColor.copy(alpha = 0.18f)
+                    )
+            )
+        }
+    }
+}
+
+@Composable
+private fun PetPickerHero(
+    species: String,
+    onSpecies: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            listOf("kitsu", "lumi", "owly").forEach { id ->
+                PetSpeciesCard(
+                    id = id,
+                    selected = id == species,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onSpecies(id) }
+                )
             }
         }
-        Spacer(Modifier.height(28.dp))
-        Text(step.first, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        Text(
-            step.second,
-            modifier = Modifier.padding(top = 14.dp),
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            lineHeight = 22.sp
-        )
-        Spacer(Modifier.height(28.dp))
-        Surface(shape = CircleShape, color = EarnedColors.Focus.copy(alpha = 0.10f)) {
-            Text(
-                "Will request real Android permission wiring later",
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                color = EarnedColors.Focus,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
-            )
+
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = EarnedColors.Focus.copy(alpha = 0.12f)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Eco,
+                    contentDescription = null,
+                    tint = EarnedColors.Focus,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    "More focus = more points\n= a happier, stronger pet.",
+                    color = EarnedColors.Focus,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 18.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PetSpeciesCard(
+    id: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val haptics = rememberHaptics()
+
+    Surface(
+        modifier = modifier
+            .height(172.dp)
+            .clickable {
+                haptics.select()
+                onClick()
+            },
+        shape = RoundedCornerShape(22.dp),
+        color = Color.White,
+        border = if (selected) BorderStroke(2.dp, EarnedColors.Primary)
+        else BorderStroke(1.dp, OnboardingTitleColor.copy(alpha = 0.08f)),
+        shadowElevation = if (selected) 6.dp else 1.dp
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = 14.dp, bottom = 14.dp)
+            ) {
+                PetSprite(
+                    pet = PetProfile(species = id, name = id, stage = 2),
+                    size = 96.dp,
+                    glow = false
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    id.replaceFirstChar { it.uppercase() },
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    color = OnboardingTitleColor
+                )
+            }
+            if (selected) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp)
+                        .size(24.dp),
+                    shape = CircleShape,
+                    color = EarnedColors.Primary,
+                    shadowElevation = 2.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }

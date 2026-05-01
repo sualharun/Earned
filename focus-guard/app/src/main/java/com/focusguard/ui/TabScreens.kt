@@ -596,18 +596,17 @@ private fun InsightBarChart(
                     .height(130.dp)
                     .fillMaxWidth()
             ) {
-                values.forEachIndexed { index, value ->
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                values.forEach { value ->
+                    Box(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
                     ) {
-                        Spacer(Modifier.weight(1f - value.coerceIn(0.05f, 1f)))
                         Box(
                             modifier = Modifier
+                                .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
-                                .weight(value.coerceIn(0.05f, 1f))
+                                .fillMaxHeight(value.coerceIn(0.05f, 1f))
                                 .clip(RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp))
                                 .background(if (value >= 0.75f) highlightColor else barColor)
                         )
@@ -874,12 +873,12 @@ private fun computeDistractionProfile(sessions: List<FocusSessionSummary>): List
 }
 
 @Composable
-fun SocialScreen() {
+private fun LegacySocialScreen() {
     val friends = remember {
         listOf(
-            SocialFriend("Sual", "lumi", 5, 12840, 6, "+520", "2h 15m"),
-            SocialFriend("Sanjiv", "kitsu", 4, 11620, 7, "+460", "1h 55m"),
-            SocialFriend("Gabe", "owly", 5, 9480, 4, "+310", "1h 35m"),
+            SocialFriend("Sual", "lumi", 3, 12840, 6, "+520", "2h 15m"),
+            SocialFriend("Sanjiv", "kitsu", 3, 11620, 7, "+460", "1h 55m"),
+            SocialFriend("Gabe", "owly", 3, 9480, 4, "+310", "1h 35m"),
             SocialFriend("Rayan", "kitsu", 3, 8770, 5, "+280", "1h 20m"),
             SocialFriend("Maya", "lumi", 3, 7640, 3, "+190", "58m"),
             SocialFriend("Leo", "owly", 2, 6920, 2, "+140", "42m")
@@ -913,14 +912,14 @@ fun MoreScreen(onOpen: (String) -> Unit) {
         ),
         "Tools" to listOf(
             MoreItem("Focus Pet", "Feed your focus companion", Icons.Filled.Pets),
-            MoreItem("Store", "Spend points and unlock rewards", Icons.Filled.Store),
-            MoreItem("Desk audit", "AI rates your workspace", Icons.Filled.CameraAlt),
-            MoreItem("Calendar", "Plan focus around events", Icons.Filled.CalendarMonth),
+            MoreItem("Store", "Buy local passes and pet cosmetics", Icons.Filled.Store),
+            MoreItem("Desk audit", "Score your workspace locally", Icons.Filled.CameraAlt),
+            MoreItem("Calendar", "Save local focus blocks", Icons.Filled.CalendarMonth),
             MoreItem("Time bank", "Earned time for reward apps", Icons.Filled.Timer)
         ),
         "Account" to listOf(
             MoreItem("Privacy ledger", "100% on-device · 0 uploads", Icons.Filled.Shield),
-            MoreItem("Settings", "Theme, notifications, account", Icons.Filled.Settings)
+            MoreItem("Settings", "Preferences and demo data", Icons.Filled.Settings)
         )
     )
     LazyColumn(
@@ -968,7 +967,7 @@ fun PetDetailScreen() {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(22.dp)) {
                     PetSprite(state.pet, size = 210.dp)
                     Text(state.pet.name, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                    Text("${state.pet.mood} · Stage ${state.pet.stage}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${state.pet.mood} · ${petStageLabel(state.pet.stage)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(14.dp))
                     ProgressBar(state.pet.fullness / 100f, EarnedColors.Focus)
                     Text("Fullness ${state.pet.fullness}/100", modifier = Modifier.padding(top = 8.dp), fontSize = 12.sp)
@@ -1012,6 +1011,14 @@ private data class SocialFriend(
 }
 
 private data class MoreItem(val label: String, val hint: String, val icon: ImageVector)
+
+private fun petStageLabel(stage: Int): String = when {
+    stage <= 1 -> "Hatchling"
+    stage == 2 -> "Sprout"
+    stage == 3 -> "Scout"
+    stage == 4 -> "Guardian"
+    else -> "Champion"
+}
 
 @Composable
 private fun SocialHeader() {
