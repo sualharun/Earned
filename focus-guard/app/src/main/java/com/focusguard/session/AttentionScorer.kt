@@ -29,7 +29,10 @@ class AttentionScorer(
         if (input.faceConfidence < config.minFaceConfidence || input.eyeConfidence < config.minEyeConfidence) {
             return DistractionReason.LowConfidence
         }
-        if (abs(input.yaw) > config.maxAbsYaw || abs(input.pitch) > config.maxAbsPitch) {
+        // Tuned from 6-min labeled session (88.4% agreement, 86.9% focused recall).
+        if (input.yaw !in config.minYaw..config.maxYaw ||
+            input.pitch !in config.minPitch..config.maxPitch
+        ) {
             return DistractionReason.LookingAway
         }
         if (input.eyeAspectRatio <= config.minEyeAspectRatio) {
@@ -50,8 +53,10 @@ data class AttentionScoringConfig(
     val focusedThreshold: Float = 0.65f,
     val recoveryRate: Float = 0.075f,
     val decayRate: Float = 0.075f,
-    val maxAbsYaw: Float = 20f,
-    val maxAbsPitch: Float = 15f,
+    val minYaw: Float = -25f,
+    val maxYaw: Float = 20f,
+    val minPitch: Float = -15f,
+    val maxPitch: Float = 18f,
     val minEyeAspectRatio: Float = 0f, // disabled until EAR signal is calibrated
     val minFaceConfidence: Float = 0.5f,
     val minEyeConfidence: Float = 0.5f
