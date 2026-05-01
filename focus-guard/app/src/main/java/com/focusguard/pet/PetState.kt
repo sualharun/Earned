@@ -1,0 +1,35 @@
+package com.focusguard.pet
+
+data class PetEvolutionState(
+    val species: PetSpecies = PetSpecies.KITSU,
+    val petName: String = "Kitsu",
+    val currentStage: Int = 1,
+    val lifetimeFocusMinutes: Int = 0,
+    val cutscene: EvolutionCutsceneData? = null,
+)
+
+data class EvolutionCutsceneData(
+    val fromStage: Int,
+    val toStage: Int,
+    val species: PetSpecies,
+    val petName: String,
+)
+
+object EvolutionThresholds {
+
+    const val MINUTES_PER_STAGE = 120
+
+    fun stageForMinutes(totalMinutes: Int): Int =
+        (totalMinutes / MINUTES_PER_STAGE + 1).coerceIn(PetAssets.MIN_STAGE, PetAssets.MAX_STAGE)
+
+    val STAGE_NAMES: Map<Int, String> = mapOf(
+        1 to "Hatchling",
+        2 to "Sprout",
+        3 to "Scout",
+        4 to "Guardian",
+        5 to "Champion",
+    )
+
+    fun stageName(stage: Int): String =
+        STAGE_NAMES[stage.coerceIn(PetAssets.MIN_STAGE, PetAssets.MAX_STAGE)] ?: "Unknown"
+}

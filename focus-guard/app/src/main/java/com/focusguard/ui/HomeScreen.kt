@@ -1,5 +1,8 @@
 package com.focusguard.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +34,7 @@ import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -38,21 +42,47 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.state.EarnedItStore
 import com.focusguard.state.FocusSessionSummary
+import com.focusguard.state.PurchaseResult
 import com.focusguard.ui.theme.EarnedColors
+import java.time.Instant
+import java.time.ZoneId
 
 @Composable
 fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
     val uiState by EarnedItStore.state.collectAsState()
+    var showPetCollection by remember { mutableStateOf(false) }
+
+    if (showPetCollection) {
+        PetCollectionBottomSheet(
+            currentPet = uiState.pet,
+            unlockedPetSpecies = uiState.unlockedPetSpecies,
+            bankedMinutes = uiState.timeBankMinutes,
+            lifetimeFocusMinutes = uiState.lifetimeFocusMinutes,
+            onDismiss = { showPetCollection = false },
+            onSelectPet = { species, stage ->
+                EarnedItStore.pickPetVersion(species.id, species.displayName, stage)
+                showPetCollection = false
+            },
+            onUnlockPet = { species, costMinutes ->
+                EarnedItStore.unlockPetSpecies(species.id, costMinutes) == PurchaseResult.Success
+            },
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -192,7 +222,9 @@ fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
 
         item {
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showPetCollection = true },
                 shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surface
             ) {
@@ -232,6 +264,14 @@ fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
         }
 
         item {
+            Text(
+                "Today",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatTile(
                     modifier = Modifier.weight(1f),
@@ -251,16 +291,20 @@ fun HomeScreen(onStartSession: () -> Unit, onReplayOnboarding: () -> Unit) {
         }
 
         item {
-            Text(
-                "Today",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
+            if (uiState.sessionsToday.isEmpty()) {
+                Text(
+                    "No sessions yet today. Earn your first 100+ points by completing one.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         items(uiState.sessionsToday.take(3), key = { it.id }) { session ->
             SessionRow(session)
         }
+
+        item { DailyQuestsSection(uiState.sessionsToday, uiState.focusMinutesToday) }
 
         item {
             Surface(
@@ -354,6 +398,128 @@ private fun StatTile(
             }
             Spacer(Modifier.height(4.dp))
             Text(value, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        }
+    }
+}
+
+@Composable
+private fun DailyQuestsSection(sessionsToday: List<FocusSessionSummary>, focusMinutesToday: Int) {
+    val sessionsBeforeNoon = remember(sessionsToday) {
+        sessionsToday.count { session ->
+            val hour = Instant.ofEpochMilli(session.startTimeMs)
+                .atZone(ZoneId.systemDefault()).hour
+            hour < 12
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("\u2728", fontSize = 20.sp)
+                Text(
+                    "Daily quests",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                "RESETS AT MIDNIGHT",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp
+            )
+        }
+
+        QuestCard(
+            title = "Early bird",
+            description = "Complete 2 sessions before noon",
+            current = sessionsBeforeNoon,
+            target = 2,
+            reward = 150
+        )
+
+        QuestCard(
+            title = "Marathon mind",
+            description = "Log 90 focus minutes today",
+            current = focusMinutesToday.coerceAtMost(90),
+            target = 90,
+            reward = 300
+        )
+
+        QuestCard(
+            title = "Two-hour titan",
+            description = "Log 120 focus minutes today",
+            current = focusMinutesToday.coerceAtMost(120),
+            target = 120,
+            reward = 450
+        )
+    }
+}
+
+@Composable
+private fun QuestCard(
+    title: String,
+    description: String,
+    current: Int,
+    target: Int,
+    reward: Int
+) {
+    val progress = (current.toFloat() / target).coerceIn(0f, 1f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(600),
+        label = "quest_progress"
+    )
+    val completed = current >= target
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(
+                    "$current/$target",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    color = if (completed) EarnedColors.Focus else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = if (completed) EarnedColors.Focus else EarnedColors.Primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                strokeCap = StrokeCap.Round
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "+$reward",
+                modifier = Modifier.align(Alignment.End),
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = if (completed) EarnedColors.Focus else EarnedColors.Points
+            )
         }
     }
 }
