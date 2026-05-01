@@ -52,7 +52,7 @@ data class AttentionScoringConfig(
     val decayRate: Float = 0.075f,
     val maxAbsYaw: Float = 20f,
     val maxAbsPitch: Float = 15f,
-    val minEyeAspectRatio: Float = 0.2f,
+    val minEyeAspectRatio: Float = 0f, // disabled until EAR signal is calibrated
     val minFaceConfidence: Float = 0.5f,
     val minEyeConfidence: Float = 0.5f
 )

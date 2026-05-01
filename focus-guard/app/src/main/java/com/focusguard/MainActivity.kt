@@ -59,7 +59,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : ComponentActivity() {
 
@@ -74,7 +73,7 @@ class MainActivity : ComponentActivity() {
     @Volatile private var lastPhase: SessionPhase? = null
     @Volatile private var recordingModeEnabled = false
     @Volatile private var stampFramesEnabled = false
-    private val isProcessingFrame = AtomicBoolean(false)
+    @Volatile private var isProcessingFrame = false
     private var benchmarkDumpJob: Job? = null
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -312,14 +311,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun processImageProxy(imageProxy: ImageProxy) {
-        if (!SessionManager.isBlockingEnabled()) {
+        if (!SessionManager.isBlockingEnabled() || isProcessingFrame) {
             imageProxy.close()
             return
         }
-        if (!isProcessingFrame.compareAndSet(false, true)) {
-            imageProxy.close()
-            return
-        }
+        isProcessingFrame = true
 
         val bitmap: Bitmap
         val rotatedBitmap: Bitmap
@@ -337,7 +333,7 @@ class MainActivity : ComponentActivity() {
             rotatedBitmap = converted.second
         } catch (e: Exception) {
             Log.e("FocusGuard_Camera", "Frame preprocessing failed", e)
-            isProcessingFrame.set(false)
+            isProcessingFrame = false
             imageProxy.close()
             return
         }
@@ -370,7 +366,7 @@ class MainActivity : ComponentActivity() {
                 if (rotatedBitmap != bitmap) rotatedBitmap.recycle()
                 bitmap.recycle()
                 imageProxy.close()
-                isProcessingFrame.set(false)
+                isProcessingFrame = false
             }
         }
     }
@@ -422,16 +418,23 @@ class MainActivity : ComponentActivity() {
 
                 frameCounter++
                 if (frameCounter >= 15) {
-                    val detectedSignals = signalBuffer.filter { it.faceDetected }
-                    val poseSignals = detectedSignals.ifEmpty { signalBuffer.toList() }
+                    val focusedFrames = signalBuffer.filter { it.faceDetected }
                     val averagedSignal = AttentionSignal(
                         faceDetected = signalBuffer.count { it.faceDetected } > signalBuffer.size / 2,
-                        yaw = poseSignals.map { it.yaw }.average().toFloat() - (baselineYaw ?: 0f),
-                        pitch = poseSignals.map { it.pitch }.average().toFloat() - (baselinePitch ?: 0f),
+                        yaw = if (focusedFrames.isEmpty()) {
+                            0f
+                        } else {
+                            focusedFrames.map { it.yaw }.average().toFloat() - (baselineYaw ?: 0f)
+                        },
+                        pitch = if (focusedFrames.isEmpty()) {
+                            0f
+                        } else {
+                            focusedFrames.map { it.pitch }.average().toFloat() - (baselinePitch ?: 0f)
+                        },
                         roll = 0f,
-                        eyeAspectRatio = poseSignals.map { it.eyeAspectRatio }.average().toFloat(),
-                        faceConfidence = detectedSignals.map { it.faceConfidence }.averageOrZero(),
-                        eyeConfidence = detectedSignals.map { it.eyeConfidence }.averageOrZero()
+                        eyeAspectRatio = signalBuffer.map { it.eyeAspectRatio }.average().toFloat(),
+                        faceConfidence = focusedFrames.map { it.faceConfidence }.averageOrZero(),
+                        eyeConfidence = focusedFrames.map { it.eyeConfidence }.averageOrZero()
                     )
                     SessionManager.onAttentionSignal(averagedSignal, frameDeltaSeconds = 1f)
                     Log.d("FocusGuard_Camera", "Averaged signal sent: $averagedSignal")
