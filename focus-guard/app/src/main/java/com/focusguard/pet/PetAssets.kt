@@ -56,4 +56,24 @@ object PetAssets {
 
     fun nextDisplayStage(species: PetSpecies, unlockedStage: Int): Int =
         availableStages(species).lastOrNull { unlockedStage >= it } ?: MIN_STAGE
+
+    /**
+     * Maps an internal stage number to a 1-based display number.
+     * e.g. for kitsu stages [1, 3, 5] → display numbers 1, 2, 3.
+     */
+    fun displayNumber(species: PetSpecies, internalStage: Int): Int {
+        val stages = availableStages(species)
+        val index = stages.indexOf(internalStage)
+        return if (index >= 0) index + 1 else stages.size
+    }
+
+    /** Total number of available stages for a species. */
+    fun stageCount(species: PetSpecies): Int = availableStages(species).size
+
+    /**
+     * Returns the internal stage threshold required to unlock the given internal stage.
+     * Each stage unlocks at (internalStage - 1) * 120 focus minutes.
+     */
+    fun minutesRequiredForStage(internalStage: Int): Int =
+        ((internalStage - 1) * 120).coerceAtLeast(0)
 }

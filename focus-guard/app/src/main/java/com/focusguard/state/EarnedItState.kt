@@ -562,18 +562,24 @@ enum class PurchaseResult {
 
 fun seedDemoState(): EarnedItUiState {
     val now = System.currentTimeMillis()
+    // Total: 45+25+50+90+60+120+90+60 = 540+60+30 = 630 min → stage 5 unlocked (need 480+)
     val sessions = listOf(
         FocusSessionSummary(now - 3_600_000L, 45, 91, true, 140, 1, now - 6_300_000L, now - 3_600_000L, 45, false, listOf("Instagram"), 9, 42),
         FocusSessionSummary(now - 86_400_000L, 25, 84, true, 105, 2, now - 87_900_000L, now - 86_400_000L, 25, false, listOf("TikTok"), 5, 58),
         FocusSessionSummary(now - 172_800_000L, 50, 94, true, 175, 0, now - 175_800_000L, now - 172_800_000L, 50, false, listOf("YouTube"), 10, 0),
         FocusSessionSummary(now - 259_200_000L, 90, 89, true, 315, 1, now - 264_600_000L, now - 259_200_000L, 90, false, listOf("Instagram", "Discord"), 18, 28),
-        FocusSessionSummary(now - 345_600_000L, 60, 96, true, 235, 0, now - 349_200_000L, now - 345_600_000L, 60, false, listOf("TikTok"), 12, 0)
+        FocusSessionSummary(now - 345_600_000L, 60, 96, true, 235, 0, now - 349_200_000L, now - 345_600_000L, 60, false, listOf("TikTok"), 12, 0),
+        FocusSessionSummary(now - 432_000_000L, 120, 93, true, 410, 0, now - 439_200_000L, now - 432_000_000L, 120, false, listOf("Instagram", "TikTok"), 24, 0),
+        FocusSessionSummary(now - 518_400_000L, 90, 88, true, 305, 1, now - 523_800_000L, now - 518_400_000L, 90, false, listOf("YouTube", "Discord"), 18, 35),
+        FocusSessionSummary(now - 604_800_000L, 60, 95, true, 240, 0, now - 608_400_000L, now - 604_800_000L, 60, false, listOf("Instagram"), 12, 0),
+        FocusSessionSummary(now - 691_200_000L, 60, 90, true, 230, 1, now - 694_800_000L, now - 691_200_000L, 60, false, listOf("TikTok"), 12, 24),
+        FocusSessionSummary(now - 777_600_000L, 30, 87, true, 115, 0, now - 779_400_000L, now - 777_600_000L, 30, false, listOf("YouTube"), 6, 0),
     )
     return EarnedItUiState(
         onboardingComplete = true,
         profile = UserProfile("Sanjiv", "sual", "00000000-0000-4000-8000-000000000001"),
         points = 50_000,
-        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 3, fullness = 92, mood = "Energized", equippedCosmetic = "Lumi scarf"),
+        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 5, fullness = 92, mood = "Energized", equippedCosmetic = "Lumi scarf"),
         unlockedPetSpecies = listOf("kitsu", "lumi", "owly"),
         unlockedFocusBackgrounds = listOf("cozy_desk", "balcony_night"),
         selectedFocusBackground = "cozy_desk",

@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -29,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -76,7 +77,6 @@ fun PetCollectionBottomSheet(
         (unlockedPetSpecies + currentPet.species).distinct()
     }
 
-    // Build flat list of all pet variants across all species
     val allVariants = remember {
         PetSpecies.entries.flatMap { species ->
             PetAssets.availableStages(species).map { stage ->
@@ -85,7 +85,6 @@ fun PetCollectionBottomSheet(
         }
     }
 
-    // Current selection — starts with the equipped pet
     var selected by remember {
         mutableStateOf(
             PetVariant(
@@ -129,6 +128,14 @@ fun PetCollectionBottomSheet(
                 isCurrentPet = isCurrentPet,
             )
 
+            Spacer(Modifier.height(12.dp))
+
+            // Progress bar toward next evolution
+            EvolutionProgressBar(
+                lifetimeFocusMinutes = lifetimeFocusMinutes,
+                unlockedStage = unlockedStage,
+            )
+
             Spacer(Modifier.height(16.dp))
 
             Text(
@@ -161,10 +168,12 @@ fun PetCollectionBottomSheet(
                     val variantUnlocked = ownedSpecies.contains(variant.species.id) && variant.stage <= unlockedStage
                     val isSelected = variant == selected
                     val tone = speciesTone(variant.species)
+                    val displayNum = PetAssets.displayNumber(variant.species, variant.stage)
 
                     PetTile(
                         species = variant.species,
-                        stage = variant.stage,
+                        displayStageNumber = displayNum,
+                        internalStage = variant.stage,
                         selected = isSelected,
                         unlocked = variantUnlocked,
                         isCurrent = variant.species.id == currentPet.species &&
@@ -183,6 +192,7 @@ fun PetCollectionBottomSheet(
             val unlockCost = speciesUnlockCost(selected.species)
             val needsUnlock = !ownedSpecies.contains(selected.species.id)
             val stageLocked = ownedSpecies.contains(selected.species.id) && selected.stage > unlockedStage
+            val displayNum = PetAssets.displayNumber(selected.species, selected.stage)
 
             Button(
                 onClick = {
@@ -220,10 +230,90 @@ fun PetCollectionBottomSheet(
                         needsUnlock && bankedMinutes < unlockCost ->
                             "Need ${unlockCost - bankedMinutes} more banked min"
                         needsUnlock -> "Unlock & select · $unlockCost min"
-                        else -> "Select ${selected.species.displayName}"
+                        else -> "Select ${selected.species.displayName} Stage $displayNum"
                     },
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EvolutionProgressBar(
+    lifetimeFocusMinutes: Int,
+    unlockedStage: Int,
+) {
+    // Find the next internal stage threshold to unlock
+    val maxInternalStage = PetAssets.MAX_STAGE
+    if (unlockedStage >= maxInternalStage) {
+        // All stages unlocked
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            color = EarnedColors.Focus.copy(alpha = 0.10f),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "All evolutions unlocked!",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = EarnedColors.Focus,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "${lifetimeFocusMinutes}m total",
+                    fontSize = 12.sp,
+                    color = EarnedColors.Focus.copy(alpha = 0.7f),
+                )
+            }
+        }
+    } else {
+        // Calculate progress toward next stage
+        val currentThreshold = PetAssets.minutesRequiredForStage(unlockedStage)
+        val nextThreshold = PetAssets.minutesRequiredForStage(unlockedStage + 1)
+        val minutesRemaining = (nextThreshold - lifetimeFocusMinutes).coerceAtLeast(0)
+        val range = (nextThreshold - currentThreshold).coerceAtLeast(1)
+        val progressInRange = (lifetimeFocusMinutes - currentThreshold).coerceAtLeast(0)
+        val progressFraction = (progressInRange.toFloat() / range).coerceIn(0f, 1f)
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            color = EarnedColors.Primary.copy(alpha = 0.06f),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${minutesRemaining}m to next evolution",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        "${lifetimeFocusMinutes}/${nextThreshold}m",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { progressFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = EarnedColors.Primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    strokeCap = StrokeCap.Round,
                 )
             }
         }
@@ -238,6 +328,8 @@ private fun SelectedPreview(
     tone: Color,
     isCurrentPet: Boolean,
 ) {
+    val displayNum = PetAssets.displayNumber(species, stage)
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -265,7 +357,7 @@ private fun SelectedPreview(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "Stage $stage",
+                    "Stage $displayNum of ${PetAssets.stageCount(species)}",
                     fontSize = 14.sp,
                     color = tone,
                     fontWeight = FontWeight.SemiBold,
@@ -303,7 +395,8 @@ private fun SelectedPreview(
 @Composable
 private fun PetTile(
     species: PetSpecies,
-    stage: Int,
+    displayStageNumber: Int,
+    internalStage: Int,
     selected: Boolean,
     unlocked: Boolean,
     isCurrent: Boolean,
@@ -331,8 +424,8 @@ private fun PetTile(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Image(
-                    painter = painterResource(PetAssets.spriteRes(species, stage)),
-                    contentDescription = "${species.displayName} stage $stage",
+                    painter = painterResource(PetAssets.spriteRes(species, internalStage)),
+                    contentDescription = "${species.displayName} stage $displayStageNumber",
                     modifier = Modifier
                         .padding(8.dp)
                         .size(62.dp)
@@ -371,7 +464,7 @@ private fun PetTile(
             textAlign = TextAlign.Center,
         )
         Text(
-            "Stage $stage",
+            "Stage $displayStageNumber",
             fontSize = 10.sp,
             color = if (selected) tone.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
             textAlign = TextAlign.Center,
