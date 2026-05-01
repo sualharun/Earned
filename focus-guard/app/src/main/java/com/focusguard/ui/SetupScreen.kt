@@ -51,13 +51,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import com.focusguard.R
 import com.focusguard.session.SessionManager
 import com.focusguard.ui.theme.EarnedColors
 import java.text.SimpleDateFormat
@@ -102,67 +105,92 @@ fun SetupScreen(
 
     var selectedApps by remember { mutableStateOf(setOf<String>()) }
     var durationMinutes by remember { mutableIntStateOf(45) }
+    var showCalibrationIntro by remember { mutableStateOf(false) }
     val haptics = rememberHaptics()
+
+    fun startSession() {
+        val seconds = durationMinutes * 60
+        SessionManager.startSession(
+            durationSeconds = seconds,
+            blacklistedApps = selectedApps.toList()
+        )
+        onSessionStarted(seconds)
+    }
 
     Scaffold(
         containerColor = EarnedColors.LightBg,
         bottomBar = {
-            BeginSessionBar(
-                durationMinutes = durationMinutes,
-                appsSelected = selectedApps.size,
-                onClick = {
-                    haptics.confirm()
-                    val seconds = durationMinutes * 60
-                    SessionManager.startSession(
-                        durationSeconds = seconds,
-                        blacklistedApps = selectedApps.toList()
-                    )
-                    onSessionStarted(seconds)
-                }
-            )
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
-                top = 0.dp,
-                bottom = 24.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                TopBar(onBack = {
-                    haptics.tap()
-                    onBack()
-                })
-            }
-            item { Hero() }
-            item {
-                DurationCard(
-                    minutes = durationMinutes,
-                    onMinutes = { newValue ->
-                        if (newValue != durationMinutes) {
-                            haptics.tick()
-                            durationMinutes = newValue
-                        }
+            if (!showCalibrationIntro) {
+                BeginSessionBar(
+                    durationMinutes = durationMinutes,
+                    appsSelected = selectedApps.size,
+                    onClick = {
+                        haptics.confirm()
+                        showCalibrationIntro = true
                     }
                 )
             }
-            item { AppsHeader(count = selectedApps.size) }
-            items(installedApps, key = { it.packageName }) { app ->
-                AppRow(
-                    app = app,
-                    selected = app.packageName in selectedApps,
-                    onToggle = {
-                        haptics.select()
-                        selectedApps = if (app.packageName in selectedApps)
-                            selectedApps - app.packageName
-                        else
-                            selectedApps + app.packageName
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 0.dp,
+                    bottom = 24.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    TopBar(onBack = {
+                        haptics.tap()
+                        onBack()
+                    })
+                }
+                item { Hero() }
+                item {
+                    DurationCard(
+                        minutes = durationMinutes,
+                        onMinutes = { newValue ->
+                            if (newValue != durationMinutes) {
+                                haptics.tick()
+                                durationMinutes = newValue
+                            }
+                        }
+                    )
+                }
+                item { AppsHeader(count = selectedApps.size) }
+                items(installedApps, key = { it.packageName }) { app ->
+                    AppRow(
+                        app = app,
+                        selected = app.packageName in selectedApps,
+                        onToggle = {
+                            haptics.select()
+                            selectedApps = if (app.packageName in selectedApps)
+                                selectedApps - app.packageName
+                            else
+                                selectedApps + app.packageName
+                        }
+                    )
+                }
+            }
+
+            if (showCalibrationIntro) {
+                CalibrationIntroOverlay(
+                    durationMinutes = durationMinutes,
+                    onBack = {
+                        haptics.tap()
+                        showCalibrationIntro = false
+                    },
+                    onNext = {
+                        haptics.confirm()
+                        startSession()
                     }
                 )
             }
@@ -216,6 +244,162 @@ private fun Hero() {
             color = SetupSubtitleColor,
             lineHeight = 20.sp
         )
+    }
+}
+
+@Composable
+private fun CalibrationIntroOverlay(
+    durationMinutes: Int,
+    onBack: () -> Unit,
+    onNext: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = EarnedColors.LightBg
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                TopBar(onBack = onBack)
+            }
+            item {
+                Column {
+                    Text(
+                        "Set up calibration",
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SetupTitleColor,
+                        lineHeight = 36.sp
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Prop your phone where it can see you, then look at your normal work spot.",
+                        fontSize = 15.sp,
+                        color = SetupSubtitleColor,
+                        lineHeight = 20.sp
+                    )
+                }
+            }
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(30.dp),
+                    color = Color.White,
+                    shadowElevation = 4.dp
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.calibration_setup_guide),
+                        contentDescription = "Phone positioned on a desk to calibrate focus tracking",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(390.dp)
+                            .clip(RoundedCornerShape(30.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
+            item {
+                CalibrationStepCard(
+                    title = "Before you start",
+                    steps = listOf(
+                        "Place your phone upright beside your screen.",
+                        "Keep your face and upper body in view.",
+                        "Look at your work for a few seconds while it calibrates."
+                    )
+                )
+            }
+            item {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .clickable(onClick = onNext),
+                    shape = RoundedCornerShape(20.dp),
+                    color = EarnedColors.Primary,
+                    shadowElevation = 6.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Next: calibrate $durationMinutes-min session",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalibrationStepCard(
+    title: String,
+    steps: List<String>,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = Color.White,
+        border = BorderStroke(1.dp, SetupBorderColor),
+        shadowElevation = 2.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                title,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = SetupTitleColor
+            )
+            steps.forEachIndexed { index, step ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.size(28.dp),
+                        shape = CircleShape,
+                        color = EarnedColors.Focus.copy(alpha = 0.14f)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                "${index + 1}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = EarnedColors.Focus
+                            )
+                        }
+                    }
+                    Text(
+                        step,
+                        modifier = Modifier.weight(1f),
+                        fontSize = 14.sp,
+                        color = SetupSubtitleColor,
+                        lineHeight = 19.sp
+                    )
+                }
+            }
+        }
     }
 }
 

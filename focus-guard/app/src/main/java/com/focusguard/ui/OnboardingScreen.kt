@@ -9,7 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,13 +40,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -102,6 +97,7 @@ fun OnboardingScreen(onComplete: () -> Unit) {
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { onboardingPages.size })
     var selectedSpecies by remember { mutableStateOf("kitsu") }
+    var completing by remember { mutableStateOf(false) }
     val haptics = rememberHaptics()
 
     val isLast = pagerState.currentPage == onboardingPages.lastIndex
@@ -175,13 +171,13 @@ fun OnboardingScreen(onComplete: () -> Unit) {
             Crossfade(targetState = isLast, label = "ctaLabel") { last ->
                 Button(
                     onClick = {
-                        if (last) {
+                        if (last && !completing) {
+                            completing = true
                             haptics.confirm()
                             val petName = selectedSpecies.replaceFirstChar { it.uppercase() }
-                            EarnedItStore.pickPet(selectedSpecies, petName)
-                            EarnedItStore.finalizeOnboarding()
+                            EarnedItStore.completeOnboarding(selectedSpecies, petName)
                             onComplete()
-                        } else {
+                        } else if (!last) {
                             haptics.tap()
                             scope.launch {
                                 pagerState.animateScrollToPage(pagerState.currentPage + 1)
@@ -223,41 +219,23 @@ private fun OnboardingPageContent(
                 alignment = Alignment.Center,
                 modifier = Modifier.fillMaxSize()
             )
-            // Localized cream halo behind the title/subtitle. The base radial
-            // brush is a circle whose radius is *smaller* than centerY — that
-            // way the natural alpha-to-zero edge of the brush sits inside the
-            // visible box on every side (no edge gets clipped into a hard
-            // horizontal line). graphicsLayer then stretches it horizontally
-            // (scaleX > 1) to give the halo a rectangular/capsule feel without
-            // touching the vertical fade.
-            BoxWithConstraints(modifier = Modifier.matchParentSize()) {
-                val density = LocalDensity.current
-                val centerX = with(density) { maxWidth.toPx() / 2f }
-                val centerY = with(density) { 130.dp.toPx() }
-                val radius = with(density) { 120.dp.toPx() }
-                val originY = centerY / with(density) { maxHeight.toPx() }
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .graphicsLayer(
-                            scaleX = 1.6f,
-                            transformOrigin = TransformOrigin(0.5f, originY)
-                        )
-                        .background(
-                            Brush.radialGradient(
-                                colorStops = arrayOf(
-                                    0.00f to EarnedColors.LightBg,
-                                    0.55f to EarnedColors.LightBg.copy(alpha = 0.97f),
-                                    0.78f to EarnedColors.LightBg.copy(alpha = 0.85f),
-                                    0.92f to EarnedColors.LightBg.copy(alpha = 0.30f),
-                                    1.00f to Color.Transparent
-                                ),
-                                center = Offset(centerX, centerY),
-                                radius = radius
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(245.dp)
+                    .background(
+                        Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.00f to EarnedColors.LightBg,
+                                0.55f to EarnedColors.LightBg.copy(alpha = 0.98f),
+                                0.76f to EarnedColors.LightBg.copy(alpha = 0.82f),
+                                0.92f to EarnedColors.LightBg.copy(alpha = 0.30f),
+                                1.00f to Color.Transparent
                             )
                         )
-                )
-            }
+                    )
+            )
             // Bottom fade — held transparent through the image, then a fast,
             // late ramp so the image is fully cream well before the dots/CTA.
             Box(
