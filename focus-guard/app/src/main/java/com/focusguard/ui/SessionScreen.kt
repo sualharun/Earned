@@ -33,11 +33,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Shield
@@ -81,9 +79,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.R
 import com.focusguard.session.SessionManager
+import com.focusguard.session.SessionPhase
 import com.focusguard.state.EarnedItStore
 import com.focusguard.state.PetProfile
-import com.focusguard.state.PurchaseResult
 import com.focusguard.ui.theme.EarnedColors
 import kotlin.math.sin
 
@@ -199,17 +197,17 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
                 onSelected = { phaseOverride = it }
             )
 
-            BackgroundPicker(
-                selectedId = selectedBackground.id,
-                unlockedIds = appState.unlockedFocusBackgrounds,
-                bankedMinutes = appState.timeBankMinutes,
-                onSelect = EarnedItStore::selectFocusBackground,
-                onUnlock = { background ->
-                    EarnedItStore.unlockFocusBackground(background.id, background.costMinutes)
+            SessionControls(
+                isPaused = session.phase == SessionPhase.Paused,
+                onTogglePause = {
+                    if (session.phase == SessionPhase.Paused) {
+                        SessionManager.resumeSession()
+                    } else {
+                        SessionManager.pauseSession()
+                    }
                 },
+                onEndSession = { showEndDialog = true },
             )
-
-            SessionControls(onEndSession = { showEndDialog = true })
         }
     }
 
@@ -688,126 +686,13 @@ private fun PhasePreviewChip(
     }
 }
 
+
 @Composable
-private fun BackgroundPicker(
-    selectedId: String,
-    unlockedIds: List<String>,
-    bankedMinutes: Int,
-    onSelect: (String) -> Unit,
-    onUnlock: (FocusBackground) -> PurchaseResult,
+private fun SessionControls(
+    isPaused: Boolean,
+    onTogglePause: () -> Unit,
+    onEndSession: () -> Unit,
 ) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(top = 14.dp),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 2.dp
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Background", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text("Choose your focus space", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-                }
-                Surface(shape = RoundedCornerShape(14.dp), color = EarnedColors.Focus.copy(alpha = 0.1f)) {
-                    Text(
-                        "$bankedMinutes",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                        color = EarnedColors.Focus,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(13.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                focusBackgrounds.forEach { background ->
-                    val unlocked = background.id in unlockedIds
-                    val selected = background.id == selectedId
-                    FocusBackgroundCard(
-                        background = background,
-                        selected = selected,
-                        unlocked = unlocked,
-                        bankedMinutes = bankedMinutes,
-                        onClick = {
-                            if (unlocked) onSelect(background.id) else onUnlock(background)
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FocusBackgroundCard(
-    background: FocusBackground,
-    selected: Boolean,
-    unlocked: Boolean,
-    bankedMinutes: Int,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.clickable(enabled = unlocked || bankedMinutes >= background.costMinutes, onClick = onClick),
-        shape = RoundedCornerShape(13.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            if (selected) 2.dp else 1.dp,
-            if (selected) EarnedColors.Focus else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(6.dp)) {
-            Box {
-                Image(
-                    painter = painterResource(background.imageRes),
-                    contentDescription = background.title,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(78.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .alpha(if (unlocked) 1f else 0.55f),
-                    contentScale = ContentScale.Crop
-                )
-                if (selected) {
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(5.dp)
-                            .size(28.dp),
-                        shape = CircleShape,
-                        color = EarnedColors.Focus
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(background.title, modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                if (!unlocked) {
-                    Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.width(3.dp))
-                    Text("${background.costMinutes} min", fontSize = 10.sp, color = EarnedColors.Focus, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SessionControls(onEndSession: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -815,9 +700,17 @@ private fun SessionControls(onEndSession: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-            IconButton(onClick = { SessionManager.pauseSession() }) {
-                Icon(Icons.Filled.Pause, contentDescription = null)
+        Surface(
+            shape = CircleShape,
+            color = if (isPaused) EarnedColors.Focus.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, if (isPaused) EarnedColors.Focus else MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            IconButton(onClick = onTogglePause) {
+                Icon(
+                    if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                    contentDescription = if (isPaused) "Resume" else "Pause",
+                    tint = if (isPaused) EarnedColors.Focus else MaterialTheme.colorScheme.onSurface
+                )
             }
         }
         Button(
@@ -830,12 +723,11 @@ private fun SessionControls(onEndSession: () -> Unit) {
         ) {
             Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(8.dp))
-            Text("End Session", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        }
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-            IconButton(onClick = { }) {
-                Icon(Icons.Filled.GraphicEq, contentDescription = null)
-            }
+            Text(
+                if (isPaused) "Paused" else "End Session",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
         }
     }
 }

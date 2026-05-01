@@ -279,7 +279,7 @@ private fun homePetSceneRes(pet: PetProfile): Int {
     val species = pet.species.lowercase()
     val stage = when {
         pet.stage <= 1 -> "egg"
-        pet.stage == 2 -> "kid"
+        pet.stage <= 3 -> "kid"
         else -> "adult"
     }
 
