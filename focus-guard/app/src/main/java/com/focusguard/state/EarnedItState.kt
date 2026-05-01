@@ -219,10 +219,6 @@ object EarnedItStore {
         mutate { it.copy(onboardingComplete = true).withPrivacyEvent("settings", "Onboarding complete", "Initial local profile created.") }
     }
 
-    fun replayOnboardingForPreview() {
-        mutate { it.copy(onboardingComplete = false).withPrivacyEvent("settings", "Onboarding replay", "Temporary preview flow reopened from Home.") }
-    }
-
     fun pickPet(species: String, name: String) {
         mutate { state ->
             state.copy(
@@ -643,7 +639,7 @@ fun seedDemoState(): EarnedItUiState {
         onboardingComplete = true,
         profile = UserProfile("Sanjiv", "sual", "00000000-0000-4000-8000-000000000001"),
         points = balance,
-        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 3, fullness = 96, mood = "Energized", equippedCosmetic = "Kitsu bandana"),
+        pet = PetProfile(name = "Kitsu", species = "kitsu", stage = 5, fullness = 96, mood = "Energized", equippedCosmetic = "Kitsu bandana"),
         unlockedPetSpecies = listOf("kitsu", "owly", "lumi"),
         unlockedFocusBackgrounds = listOf("cozy_desk", "balcony_night"),
         selectedFocusBackground = "cozy_desk",
@@ -712,7 +708,7 @@ private fun EarnedItUiState.withStableUserIdentity(): EarnedItUiState {
 }
 
 /** Points required for each pet evolution stage. */
-val PET_STAGE_THRESHOLDS = mapOf(1 to 0, 2 to 500, 3 to 1_500)
+val PET_STAGE_THRESHOLDS = mapOf(1 to 0, 3 to 500, 5 to 1_500)
 
 /** Species unlock costs in points. */
 val SPECIES_UNLOCK_COST = mapOf("kitsu" to 0, "owly" to 1_000, "lumi" to 2_500)
@@ -726,8 +722,9 @@ fun petStageForPoints(totalPoints: Int): Int {
 }
 
 fun pointsForNextStage(currentStage: Int): Int? {
-    val next = currentStage + 1
-    return PET_STAGE_THRESHOLDS[next]
+    val sorted = PET_STAGE_THRESHOLDS.keys.sorted()
+    val nextKey = sorted.firstOrNull { it > currentStage }
+    return nextKey?.let { PET_STAGE_THRESHOLDS[it] }
 }
 
 fun pointsRequiredForStage(stage: Int): Int =

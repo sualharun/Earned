@@ -20,8 +20,8 @@ object EvolutionThresholds {
     /** Points required to reach each stage. */
     val STAGE_POINTS: Map<Int, Int> = mapOf(
         1 to 0,
-        2 to 500,
-        3 to 1_500,
+        3 to 500,
+        5 to 1_500,
     )
 
     fun stageForPoints(totalPoints: Int): Int {
@@ -32,8 +32,11 @@ object EvolutionThresholds {
         return stage.coerceIn(PetAssets.MIN_STAGE, PetAssets.MAX_STAGE)
     }
 
-    fun pointsForNextStage(currentStage: Int): Int? =
-        STAGE_POINTS[currentStage + 1]
+    fun pointsForNextStage(currentStage: Int): Int? {
+        val sorted = STAGE_POINTS.keys.sorted()
+        val nextKey = sorted.firstOrNull { it > currentStage }
+        return nextKey?.let { STAGE_POINTS[it] }
+    }
 
     val STAGE_NAMES: Map<Int, String> = mapOf(
         1 to "Hatchling",

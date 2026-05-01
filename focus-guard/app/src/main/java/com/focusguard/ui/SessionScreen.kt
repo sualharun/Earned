@@ -840,5 +840,5 @@ private fun phaseMessage(phase: FocusPhase): String =
     when (phase) {
         FocusPhase.Focused -> "Progress earning normally"
         FocusPhase.Refocus -> "Refocus now to keep progress smooth"
-        FocusPhase.Distracted -> "+2s penalty while distracted"
+        FocusPhase.Distracted -> "Timer paused while distracted"
     }

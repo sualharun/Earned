@@ -163,6 +163,8 @@ class MainActivity : ComponentActivity() {
                 if (!uiState.loaded) {
                     Box(modifier = Modifier.fillMaxSize())
                 } else {
+                    val startDest = remember { if (uiState.onboardingComplete) "home" else "onboarding" }
+
                     Scaffold(
                         containerColor = Color.Transparent,
                         bottomBar = {
@@ -179,7 +181,7 @@ class MainActivity : ComponentActivity() {
                     ) { padding ->
                         NavHost(
                             navController = navController,
-                            startDestination = if (uiState.onboardingComplete) "home" else "onboarding",
+                            startDestination = startDest,
                             modifier = Modifier.padding(padding)
                         ) {
                             composable("onboarding") {
@@ -187,6 +189,7 @@ class MainActivity : ComponentActivity() {
                                     onComplete = {
                                         navController.navigate("home") {
                                             popUpTo("onboarding") { inclusive = true }
+                                            launchSingleTop = true
                                         }
                                     }
                                 )
@@ -195,7 +198,6 @@ class MainActivity : ComponentActivity() {
                                 HomeScreen(
                                     onStartSession = { navController.navigate("setup") },
                                     onReplayOnboarding = {
-                                        EarnedItStore.replayOnboardingForPreview()
                                         navController.navigate("onboarding") {
                                             popUpTo("home") { inclusive = false }
                                             launchSingleTop = true
