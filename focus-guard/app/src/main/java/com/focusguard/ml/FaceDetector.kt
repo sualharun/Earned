@@ -3,6 +3,7 @@ package com.focusguard.ml
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
+import com.focusguard.instrumentation.BenchmarkRegistry
 import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.CompiledModel
 import kotlinx.coroutines.Dispatchers
@@ -48,70 +49,73 @@ class FaceDetector(private val context: Context) {
         }
         
         inputBuffers[0].writeFloat(floatValues)
-        compiledModel.run(inputBuffers, outputBuffers)
+        BenchmarkRegistry.trace(BenchmarkRegistry.faceDetectInference, "face_detect_inference") {
+            compiledModel.run(inputBuffers, outputBuffers)
+        }
 
         if (resizedBitmap != frameBitmap) resizedBitmap.recycle()
 
-        // Model Outputs:
-        // box_coords_1: [1, 512, 16] - outputBuffers[0]
-        // box_coords_2: [1, 384, 16] - outputBuffers[1]
-        // box_scores_1: [1, 512, 1]  - outputBuffers[2]
-        // box_scores_2: [1, 384, 1]  - outputBuffers[3]
-        
-        val coords1 = outputBuffers[0].readFloat() // 512 * 16
-        val coords2 = outputBuffers[1].readFloat() // 384 * 16
-        val scores1 = outputBuffers[2].readFloat() // 512 * 1
-        val scores2 = outputBuffers[3].readFloat() // 384 * 1
+        BenchmarkRegistry.trace(BenchmarkRegistry.faceDetectPostprocess, "face_detect_postprocess") {
+            // Model Outputs:
+            // box_coords_1: [1, 512, 16] - outputBuffers[0]
+            // box_coords_2: [1, 384, 16] - outputBuffers[1]
+            // box_scores_1: [1, 512, 1]  - outputBuffers[2]
+            // box_scores_2: [1, 384, 1]  - outputBuffers[3]
+            val coords1 = outputBuffers[0].readFloat() // 512 * 16
+            val coords2 = outputBuffers[1].readFloat() // 384 * 16
+            val scores1 = outputBuffers[2].readFloat() // 512 * 1
+            val scores2 = outputBuffers[3].readFloat() // 384 * 1
 
-        var bestScore = -1f
-        var bestIdx = -1
-        var useScale1 = true
+            var bestScore = -1f
+            var bestIdx = -1
+            var useScale1 = true
 
-        for (i in 0 until 512) {
-            val score = sigmoid(scores1[i])
-            if (score > bestScore) {
-                bestScore = score
-                bestIdx = i
-                useScale1 = true
+            for (i in 0 until 512) {
+                val score = sigmoid(scores1[i])
+                if (score > bestScore) {
+                    bestScore = score
+                    bestIdx = i
+                    useScale1 = true
+                }
             }
-        }
-        for (i in 0 until 384) {
-            val score = sigmoid(scores2[i])
-            if (score > bestScore) {
-                bestScore = score
-                bestIdx = i
-                useScale1 = false
+            for (i in 0 until 384) {
+                val score = sigmoid(scores2[i])
+                if (score > bestScore) {
+                    bestScore = score
+                    bestIdx = i
+                    useScale1 = false
+                }
             }
-        }
 
-        if (bestScore >= CONFIDENCE_THRESHOLD) {
-            val coords = if (useScale1) coords1 else coords2
-            val anchorIdx = if (useScale1) bestIdx else 512 + bestIdx
-            val anchor = anchors[anchorIdx]
-            val offset = bestIdx * 16
-            
-            // MediaPipe decoding: offsets are in pixels relative to INPUT_SIZE
-            val cx = (coords[offset]     / INPUT_SIZE) + anchor.centerX
-            val cy = (coords[offset + 1] / INPUT_SIZE) + anchor.centerY
-            val w  =  coords[offset + 2] / INPUT_SIZE
-            val h  =  coords[offset + 3] / INPUT_SIZE
+            if (bestScore >= CONFIDENCE_THRESHOLD) {
+                val coords = if (useScale1) coords1 else coords2
+                val anchorIdx = if (useScale1) bestIdx else 512 + bestIdx
+                val anchor = anchors[anchorIdx]
+                val offset = bestIdx * 16
 
-            val xmin = (cx - w / 2f).coerceIn(0f, 1f)
-            val ymin = (cy - h / 2f).coerceIn(0f, 1f)
-            val xmax = (cx + w / 2f).coerceIn(0f, 1f)
-            val ymax = (cy + h / 2f).coerceIn(0f, 1f)
+                // MediaPipe decoding: offsets are in pixels relative to INPUT_SIZE
+                val cx = (coords[offset] / INPUT_SIZE) + anchor.centerX
+                val cy = (coords[offset + 1] / INPUT_SIZE) + anchor.centerY
+                val w = coords[offset + 2] / INPUT_SIZE
+                val h = coords[offset + 3] / INPUT_SIZE
 
-            val rect = RectF(
-                xmin * frameBitmap.width,
-                ymin * frameBitmap.height,
-                xmax * frameBitmap.width,
-                ymax * frameBitmap.height
-            )
+                val xmin = (cx - w / 2f).coerceIn(0f, 1f)
+                val ymin = (cy - h / 2f).coerceIn(0f, 1f)
+                val xmax = (cx + w / 2f).coerceIn(0f, 1f)
+                val ymax = (cy + h / 2f).coerceIn(0f, 1f)
 
-            val faceCropBitmap = cropFace(frameBitmap, rect)
-            FaceDetectionResult.Detected(FaceCrop(faceCropBitmap, bestScore, rect))
-        } else {
-            FaceDetectionResult.NoFace
+                val rect = RectF(
+                    xmin * frameBitmap.width,
+                    ymin * frameBitmap.height,
+                    xmax * frameBitmap.width,
+                    ymax * frameBitmap.height
+                )
+
+                val faceCropBitmap = cropFace(frameBitmap, rect)
+                FaceDetectionResult.Detected(FaceCrop(faceCropBitmap, bestScore, rect))
+            } else {
+                FaceDetectionResult.NoFace
+            }
         }
     }
 

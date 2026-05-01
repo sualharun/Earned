@@ -32,6 +32,11 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.focusguard.ml.AttentionSignal
 import com.focusguard.ml.MLPipeline
+import com.focusguard.instrumentation.BenchmarkRegistry
+import com.focusguard.instrumentation.BenchmarkReporter
+import com.focusguard.instrumentation.DebugInstrumentationState
+import com.focusguard.instrumentation.QualityCaptureManager
+import com.focusguard.instrumentation.SystemMetricsSampler
 import com.focusguard.session.SessionManager
 import com.focusguard.session.SessionPhase
 import com.focusguard.state.EarnedItStore
@@ -49,6 +54,8 @@ import com.focusguard.ui.SessionScreen
 import com.focusguard.ui.SocialScreen
 import com.focusguard.ui.theme.FocusGuardTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -64,6 +71,9 @@ class MainActivity : ComponentActivity() {
     private var calibrationFrames = mutableListOf<AttentionSignal>()
     @Volatile private var isCalibrating = false
     @Volatile private var lastPhase: SessionPhase? = null
+    @Volatile private var recordingModeEnabled = false
+    @Volatile private var stampFramesEnabled = false
+    private var benchmarkDumpJob: Job? = null
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -94,8 +104,38 @@ class MainActivity : ComponentActivity() {
                         isCalibrating = true
                         SessionManager.setCalibrating(true)
                         frameCounter = 0
+                        SystemMetricsSampler.reset()
+                        SystemMetricsSampler.start(applicationContext)
+                        startBenchmarkAutoDump()
+                        maybeStartQualityCapture()
+                    } else if (state.phase != SessionPhase.FocusActive && lastPhase == SessionPhase.FocusActive) {
+                        stopBenchmarkAutoDump()
+                        runCatching { BenchmarkReporter.dumpReport(applicationContext) }
+                        SystemMetricsSampler.stop()
+                        QualityCaptureManager.stop()
                     }
                     lastPhase = state.phase
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                DebugInstrumentationState.recordingModeEnabled.collect { enabled ->
+                    recordingModeEnabled = enabled
+                    if (enabled) {
+                        maybeStartQualityCapture()
+                    } else {
+                        QualityCaptureManager.stop()
+                    }
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                DebugInstrumentationState.stampFramesEnabled.collect { enabled ->
+                    stampFramesEnabled = enabled
                 }
             }
         }
@@ -234,6 +274,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopBenchmarkAutoDump()
+        QualityCaptureManager.stop()
+        SystemMetricsSampler.stop()
         cameraExecutor.shutdown()
     }
 
@@ -272,17 +315,47 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        val bitmap = imageProxy.toBitmap()
-        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-        val matrix = Matrix().apply {
-            postRotate(rotationDegrees.toFloat())
-            postScale(-1f, 1f, bitmap.width / 2f, bitmap.height / 2f)
+        val bitmap: Bitmap
+        val rotatedBitmap: Bitmap
+        try {
+            val converted = BenchmarkRegistry.trace(BenchmarkRegistry.preprocess, "preprocess") {
+                val sourceBitmap = imageProxy.toBitmap()
+                val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                val matrix = Matrix().apply {
+                    postRotate(rotationDegrees.toFloat())
+                    postScale(-1f, 1f, sourceBitmap.width / 2f, sourceBitmap.height / 2f)
+                }
+                sourceBitmap to Bitmap.createBitmap(sourceBitmap, 0, 0, sourceBitmap.width, sourceBitmap.height, matrix, true)
+            }
+            bitmap = converted.first
+            rotatedBitmap = converted.second
+        } catch (e: Exception) {
+            Log.e("FocusGuard_Camera", "Frame preprocessing failed", e)
+            imageProxy.close()
+            return
         }
-        val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
 
         lifecycleScope.launch(Dispatchers.Default) {
             try {
+                val captureThisFrame = QualityCaptureManager.recordFrameAvailable()
+                val calibrationFrame = isCalibrating
                 val signal = mlPipeline.processFrame(rotatedBitmap)
+                SystemMetricsSampler.recordFrame()
+                if (captureThisFrame && recordingModeEnabled) {
+                    val baselineSubtractedYaw = signal.yaw - (baselineYaw ?: 0f)
+                    val baselineSubtractedPitch = signal.pitch - (baselinePitch ?: 0f)
+                    QualityCaptureManager.enqueue(
+                        sourceBitmap = rotatedBitmap,
+                        metadata = mlPipeline.latestQualityMetadata,
+                        isCalibrationFrame = calibrationFrame,
+                        baselinePitchDeg = baselinePitch,
+                        baselineYawDeg = baselineYaw,
+                        inFocusedZone = signal.faceDetected &&
+                            QualityCaptureManager.focusedZoneFor(baselineSubtractedYaw, baselineSubtractedPitch),
+                        sessionScore = SessionManager.currentState.attentionScore * 100f,
+                        stampFrames = stampFramesEnabled
+                    )
+                }
                 handleSignal(signal)
             } catch (e: Exception) {
                 Log.e("FocusGuard_Camera", "Frame processing failed", e)
@@ -292,6 +365,33 @@ class MainActivity : ComponentActivity() {
                 imageProxy.close()
             }
         }
+    }
+
+    private fun maybeStartQualityCapture() {
+        if (!recordingModeEnabled || SessionManager.currentState.phase != SessionPhase.FocusActive) return
+        QualityCaptureManager.start(
+            context = applicationContext,
+            calibrationCompleted = !isCalibrating && baselinePitch != null && baselineYaw != null,
+            baselinePitchDeg = baselinePitch,
+            baselineYawDeg = baselineYaw
+        )
+    }
+
+    private fun startBenchmarkAutoDump() {
+        if (benchmarkDumpJob != null) return
+        benchmarkDumpJob = lifecycleScope.launch(Dispatchers.IO) {
+            while (true) {
+                delay(60_000L)
+                if (SessionManager.currentState.phase == SessionPhase.FocusActive) {
+                    BenchmarkReporter.dumpReport(applicationContext)
+                }
+            }
+        }
+    }
+
+    private fun stopBenchmarkAutoDump() {
+        benchmarkDumpJob?.cancel()
+        benchmarkDumpJob = null
     }
 
     private fun handleSignal(signal: AttentionSignal) {

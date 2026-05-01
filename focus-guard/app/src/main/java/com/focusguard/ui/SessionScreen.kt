@@ -25,10 +25,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.focusguard.instrumentation.BenchmarkReporter
+import com.focusguard.instrumentation.DebugInstrumentationState
 import com.focusguard.session.SessionManager
 import com.focusguard.ui.theme.EarnedColors
 
@@ -36,6 +39,9 @@ import com.focusguard.ui.theme.EarnedColors
 fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
     val state by SessionManager.stateFlow.collectAsState()
     val isCalibrating by SessionManager.isCalibrating.collectAsState()
+    val recordingModeEnabled by DebugInstrumentationState.recordingModeEnabled.collectAsState()
+    val stampFramesEnabled by DebugInstrumentationState.stampFramesEnabled.collectAsState()
+    val context = LocalContext.current
 
     LaunchedEffect(state.isActive) {
         if (!state.isActive && state.remainingSeconds <= 0) {
@@ -279,6 +285,43 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "DEBUG CAPTURE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                DebugSwitchRow(
+                    title = "Recording Mode",
+                    body = "Save sampled frames and sidecars locally",
+                    checked = recordingModeEnabled,
+                    onCheckedChange = DebugInstrumentationState::setRecordingModeEnabled
+                )
+                Spacer(Modifier.height(10.dp))
+                DebugSwitchRow(
+                    title = "Stamp frames with timestamp",
+                    body = "Draw elapsed time and model state on saved JPEGs",
+                    checked = stampFramesEnabled,
+                    onCheckedChange = DebugInstrumentationState::setStampFramesEnabled
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { BenchmarkReporter.dumpReport(context.applicationContext) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Dump benchmark report")
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
         // NPU badge
         Surface(
             shape = RoundedCornerShape(20.dp),
@@ -377,6 +420,34 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun DebugSwitchRow(
+    title: String,
+    body: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                body,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
