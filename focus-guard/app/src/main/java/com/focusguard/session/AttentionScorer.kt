@@ -53,11 +53,11 @@ data class AttentionScoringConfig(
     val focusedThreshold: Float = 0.65f,
     val recoveryRate: Float = 0.075f,
     val decayRate: Float = 0.075f,
-    val minYaw: Float = -25f,
-    val maxYaw: Float = 20f,
-    val minPitch: Float = -15f,
-    val maxPitch: Float = 18f,
-    val minEyeAspectRatio: Float = 0f, // disabled until EAR signal is calibrated
+    val minYaw: Float = -20f,
+    val maxYaw: Float = 15f,
+    val minPitch: Float = -12f,
+    val maxPitch: Float = 15f,
+    val minEyeAspectRatio: Float = 0.15f,
     val minFaceConfidence: Float = 0.5f,
     val minEyeConfidence: Float = 0.5f
 )
