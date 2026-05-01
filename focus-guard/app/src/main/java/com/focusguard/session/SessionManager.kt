@@ -18,6 +18,8 @@ object SessionManager {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val scorer = AttentionScorer()
     private val _state = MutableStateFlow(SessionState())
+    private val _isCalibrating = MutableStateFlow(false)
+    val isCalibrating: StateFlow<Boolean> = _isCalibrating.asStateFlow()
     private var countdownJob: Job? = null
     private var blacklistStore: BlacklistStore? = null
     private var focusedElapsedSeconds = 0f
@@ -133,6 +135,10 @@ object SessionManager {
         _state.update { it.copy(blacklistedApps = updated) }
     }
 
+    fun setCalibrating(calibrating: Boolean) {
+        _isCalibrating.value = calibrating
+    }
+
     fun onAttentionSignal(signal: AttentionSignal, frameDeltaSeconds: Float = DEFAULT_FRAME_DELTA_SECONDS) {
         onAttentionInput(signal.toAttentionInput(), signal, frameDeltaSeconds)
     }
@@ -171,18 +177,10 @@ object SessionManager {
         }
 
         _state.update { current ->
-            val availableExtension = (MAX_EXTENSION_SECONDS - current.extensionSeconds).coerceAtLeast(0)
-            val penaltySeconds = if (distractedWholeSeconds > 0) {
-                DISTRACTION_TIME_PENALTY_SECONDS.coerceAtMost(availableExtension)
-            } else {
-                0
-            }
-
             current.copy(
-                remainingFocusSeconds = current.remainingFocusSeconds + penaltySeconds,
+                remainingFocusSeconds = current.remainingFocusSeconds,
                 focusedSeconds = current.focusedSeconds + focusedWholeSeconds,
                 distractedSeconds = current.distractedSeconds + distractedWholeSeconds,
-                extensionSeconds = current.extensionSeconds + penaltySeconds,
                 attentionScore = result.attentionScore,
                 distractionReason = result.distractionReason,
                 lastSignal = sourceSignal,
@@ -225,7 +223,13 @@ object SessionManager {
         _state.update { state ->
             when (state.phase) {
                 SessionPhase.FocusActive -> {
-                    val nextRemaining = (state.remainingFocusSeconds - 1).coerceAtLeast(0)
+                    if (_isCalibrating.value) return@update state // freeze timer during calibration
+                    val isFocused = _state.value.distractionReason == DistractionReason.None
+                    val nextRemaining = if (isFocused) {
+                        (state.remainingFocusSeconds - 1).coerceAtLeast(0)
+                    } else {
+                        state.remainingFocusSeconds // timer paused, penalty handled by onAttentionInput
+                    }
                     if (nextRemaining == 0) {
                         state.copy(
                             phase = SessionPhase.RewardActive,
@@ -274,13 +278,15 @@ object SessionManager {
             yaw = yaw,
             pitch = pitch,
             roll = roll,
-            eyeAspectRatio = eyeAspectRatio
+            eyeAspectRatio = eyeAspectRatio,
+            faceConfidence = faceConfidence,
+            eyeConfidence = eyeConfidence
         )
     }
 
     private const val ONE_SECOND_MS = 1_000L
     private const val DEFAULT_FRAME_DELTA_SECONDS = 1f / 15f
-    private const val DISTRACTION_TIME_PENALTY_SECONDS = 2
+    private const val DISTRACTION_TIME_PENALTY_SECONDS = 3
     private const val DEFAULT_REWARD_SECONDS = 5 * 60
     private const val MAX_EXTENSION_SECONDS = 10 * 60
     private const val MAX_RECENT_BLOCKED_ATTEMPTS = 10

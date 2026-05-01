@@ -106,6 +106,7 @@ private val focusBackgrounds = listOf(
 @Composable
 fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
     val session by SessionManager.stateFlow.collectAsState()
+    val isCalibrating by SessionManager.isCalibrating.collectAsState()
     val appState by EarnedItStore.state.collectAsState()
 
     LaunchedEffect(session.isActive, session.remainingSeconds) {
@@ -177,6 +178,18 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
                 .verticalScroll(rememberScrollState())
         ) {
             SessionTopBar(blockedCount = session.blacklistedApps.size)
+
+            if (isCalibrating && session.isActive) {
+                Text(
+                    text = "Calibrating camera...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
 
             FocusCompanionHero(
                 pet = appState.pet,
