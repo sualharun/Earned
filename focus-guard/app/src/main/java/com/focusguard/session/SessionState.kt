@@ -21,7 +21,7 @@ data class SessionState(
     val recentBlockedAttempts: List<BlockedAppAttempt> = emptyList()
 ) {
     val isActive: Boolean
-        get() = phase == SessionPhase.FocusActive
+        get() = phase == SessionPhase.FocusActive || phase == SessionPhase.Paused
 
     val isRewardActive: Boolean
         get() = phase == SessionPhase.RewardActive

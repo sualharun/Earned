@@ -42,6 +42,7 @@ import com.focusguard.ui.theme.EarnedColors
 fun ResultsScreen(onDone: () -> Unit) {
     val uiState by EarnedItStore.state.collectAsState()
     val session = uiState.lastSession
+    val haptics = rememberHaptics()
 
     Column(
         modifier = Modifier
@@ -75,7 +76,7 @@ fun ResultsScreen(onDone: () -> Unit) {
             textAlign = TextAlign.Center
         )
         Text(
-            if (session?.success == true) "You earned focus points and added time bank minutes." else "No points awarded for this session.",
+            if (session?.success == true) "You earned ${session.pointsEarned} points and ${session.timeBankMinutesEarned}m of bank time." else "Keep focusing to earn points!",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -111,7 +112,10 @@ fun ResultsScreen(onDone: () -> Unit) {
         Spacer(Modifier.height(28.dp))
 
         Button(
-            onClick = onDone,
+            onClick = {
+                haptics.confirm()
+                onDone()
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),

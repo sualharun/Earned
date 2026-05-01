@@ -111,8 +111,13 @@ fun MoreFeatureScreen(title: String, onBack: () -> Unit) {
 @Composable
 fun MorePetDetailScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
-    val nextStageMinutes = (state.pet.stage * 90).coerceAtLeast(90)
-    val evolutionProgress = (state.lifetimeFocusMinutes / nextStageMinutes.toFloat()).coerceIn(0f, 1f)
+    val stageLabel = petStageLabel(state.pet.stage)
+    val nextStagePts = com.focusguard.state.pointsForNextStage(state.pet.stage)
+    val evolutionProgress = if (nextStagePts == null) {
+        1f
+    } else {
+        (state.points / nextStagePts.toFloat()).coerceIn(0f, 1f)
+    }
     var moodBoost by remember { mutableStateOf("Ready") }
 
     MoreDetailScaffold(
@@ -134,14 +139,21 @@ fun MorePetDetailScreen(onBack: () -> Unit) {
                     PetSprite(state.pet, size = 190.dp)
                     Text(state.pet.name, fontSize = 30.sp, fontWeight = FontWeight.Bold)
                     StatusPill("${state.pet.mood} mood", EarnedColors.Focus)
+                    if (state.pet.equippedCosmetic.isNotBlank()) {
+                        StatusPill("${state.pet.equippedCosmetic} equipped", EarnedColors.Points)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        KpiTile("Stage", state.pet.stage.toString(), Modifier.weight(1f))
+                        KpiTile("Stage", stageLabel, Modifier.weight(1f))
                         KpiTile("Fullness", "${state.pet.fullness}%", Modifier.weight(1f))
                         KpiTile("Streak", "${state.streakDays}d", Modifier.weight(1f))
                     }
                     ProgressBlock(
-                        title = "Next evolution",
-                        detail = "${state.lifetimeFocusMinutes} of $nextStageMinutes lifetime focused minutes",
+                        title = if (nextStagePts == null) "Max evolution" else "Next evolution",
+                        detail = if (nextStagePts == null) {
+                            "%,d total points earned.".format(state.points)
+                        } else {
+                            "%,d / %,d pts to evolve".format(state.points, nextStagePts)
+                        },
                         progress = evolutionProgress,
                         color = EarnedColors.Points
                     )
@@ -173,8 +185,13 @@ fun MorePetDetailScreen(onBack: () -> Unit) {
         }
         item {
             SectionCard("Milestones", "Recent growth moments") {
-                StatusRow(Icons.Filled.CheckCircle, "Stage ${state.pet.stage} unlocked", "${state.lifetimeFocusMinutes} lifetime focus minutes recorded.", EarnedColors.Focus)
-                StatusRow(Icons.Filled.WorkspacePremium, "Next evolution", "${(nextStageMinutes - state.lifetimeFocusMinutes).coerceAtLeast(0)} focus minutes remaining.", EarnedColors.Points)
+                StatusRow(Icons.Filled.CheckCircle, "$stageLabel form unlocked", "%,d total points earned.".format(state.points), EarnedColors.Focus)
+                StatusRow(
+                    Icons.Filled.WorkspacePremium,
+                    if (nextStagePts == null) "Fully evolved" else "Next evolution",
+                    if (nextStagePts == null) "Your pet has reached its final form." else "%,d pts remaining.".format((nextStagePts - state.points).coerceAtLeast(0)),
+                    EarnedColors.Points
+                )
                 StatusRow(Icons.Filled.Lock, "Night aura", "Requires a 14 day streak. Current streak: ${state.streakDays}.", MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -188,10 +205,10 @@ private fun TrophiesScreen(onBack: () -> Unit) {
     val trophies = listOf(
         Trophy("First Lock", "Complete your first protected focus session.", if (state.allSessions.isNotEmpty()) 1f else 0f, state.allSessions.isNotEmpty()),
         Trophy("Seven Day Spark", "Hold a 7 day streak.", (state.streakDays / 7f).coerceIn(0f, 1f), state.streakDays >= 7),
-        Trophy("Deep Work Bronze", "Reach 250 focused minutes.", (state.lifetimeFocusMinutes / 250f).coerceIn(0f, 1f), state.lifetimeFocusMinutes >= 250),
+        Trophy("Deep Work Bronze", "Earn 1,000 total points.", (state.points / 1000f).coerceIn(0f, 1f), state.points >= 1000),
         Trophy("Clean Desk", "Pass a desk audit with 85+.", cleanDeskProgress, state.deskAudit.score >= 85),
         Trophy("Reward Saver", "Bank 60 reward minutes.", (state.timeBankMinutes / 60f).coerceIn(0f, 1f), state.timeBankMinutes >= 60),
-        Trophy("Pet Guardian", "Evolve your pet to stage 4.", (state.pet.stage / 4f).coerceIn(0f, 1f), state.pet.stage >= 4)
+        Trophy("Pet Guardian", "Evolve your pet into its adult form.", (state.pet.stage / 3f).coerceIn(0f, 1f), state.pet.stage >= 3)
     )
     val earned = trophies.filter { it.earned }
     val nextTrophy = trophies.filterNot { it.earned }.maxByOrNull { it.progress }
@@ -325,15 +342,6 @@ private fun WrappedScreen(onBack: () -> Unit) {
                         KpiTile("Points", "+$weeklyPoints", Modifier.weight(1f))
                         KpiTile("Streak", "${state.streakDays}d", Modifier.weight(1f))
                     }
-                    Button(
-                        onClick = {},
-                        colors = ButtonDefaults.buttonColors(containerColor = EarnedColors.Primary),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Preview share card")
-                    }
                 }
             }
         }
@@ -350,16 +358,17 @@ private fun WrappedScreen(onBack: () -> Unit) {
 @Composable
 private fun StoreScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
-    val categories = listOf("Rewards", "Pet", "Garden", "Boosts")
+    val categories = listOf("Rewards", "Pet")
     var selectedCategory by remember { mutableStateOf(categories.first()) }
     var lastMessage by remember { mutableStateOf("Purchases are saved locally on this device.") }
+    val haptics = rememberHaptics()
     val items = listOf(
-        StoreItem("youtube_15", "15 min YouTube pass", "Rewards", 450, "Unlock reward app time", 1),
-        StoreItem("tiktok_30", "30 min TikTok pass", "Rewards", 820, "Spend from Time Bank", 1),
-        StoreItem("lumi_scarf", "Lumi scarf", "Pet", 260, "Equip a cozy pet cosmetic", 1),
-        StoreItem("focus_crown", "Focus crown", "Pet", 620, "Stage 4 required", 4),
-        StoreItem("garden_lantern", "Garden lantern", "Garden", 340, "Decorate your social podium", 1),
-        StoreItem("deep_work_boost", "Deep Work boost", "Boosts", 500, "+10% points next session", 1)
+        StoreItem("youtube_15", "15 min YouTube pass", "Rewards", 500, "Unlock reward app time", 1),
+        StoreItem("tiktok_30", "30 min TikTok pass", "Rewards", 1000, "Spend your earned points", 1),
+        StoreItem("lumi_scarf", "Lumi scarf", "Pet", 300, "Equip a cozy pet cosmetic", 1),
+        StoreItem("kitsu_bandana", "Kitsu bandana", "Pet", 400, "Equip a bright focus bandana", 1),
+        StoreItem("owly_glasses", "Owly glasses", "Pet", 500, "Equip study glasses", 2),
+        StoreItem("focus_crown", "Focus crown", "Pet", 750, "Evolved form required", 3)
     )
 
     MoreDetailScaffold("Store", "Spend points on rewards and pet upgrades.", onBack) {
@@ -382,6 +391,7 @@ private fun StoreScreen(onBack: () -> Unit) {
         }
         items(items.filter { it.category == selectedCategory }) { item ->
             val isOwned = state.storePurchases.any { it.itemId == item.id }
+            val isEquipped = item.category == "Pet" && state.pet.equippedCosmetic == item.name
             val locked = state.pet.stage < item.requiredStage
             Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
                 Row(
@@ -400,8 +410,14 @@ private fun StoreScreen(onBack: () -> Unit) {
                     }
                     Button(
                         onClick = {
+                            haptics.confirm()
                             when {
-                                locked -> lastMessage = "Focus crown unlocks when your pet reaches stage 4."
+                                locked -> lastMessage = "Focus crown unlocks when your pet reaches adult form."
+                                isOwned && item.category == "Pet" -> {
+                                    EarnedItStore.equipPetCosmetic(item.name)
+                                    lastMessage = "${item.name} equipped."
+                                }
+                                isOwned -> lastMessage = "${item.name} is already in your inventory."
                                 else -> {
                                     lastMessage = when (EarnedItStore.purchaseStoreItem(item.id, item.name, item.category, item.price)) {
                                         PurchaseResult.Success -> "${item.name} added to inventory."
@@ -412,11 +428,20 @@ private fun StoreScreen(onBack: () -> Unit) {
                                 }
                             }
                         },
-                        enabled = !locked,
+                        enabled = !locked && !isEquipped && !(isOwned && item.category != "Pet"),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = if (isOwned) EarnedColors.Focus else EarnedColors.Primary)
                     ) {
-                        Text(if (isOwned) "Owned" else if (locked) "Locked" else "Buy", fontSize = 12.sp)
+                        Text(
+                            when {
+                                locked -> "Locked"
+                                isEquipped -> "Equipped"
+                                isOwned && item.category == "Pet" -> "Equip"
+                                isOwned -> "Owned"
+                                else -> "Buy"
+                            },
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }
@@ -429,6 +454,7 @@ private fun DeskAuditScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
     val audit = state.deskAudit
     val resultVisible = audit.timestampMs > 0L
+    val haptics = rememberHaptics()
 
     MoreDetailScaffold("Desk audit", "Score your workspace before focus starts.", onBack) {
         item {
@@ -442,7 +468,10 @@ private fun DeskAuditScreen(onBack: () -> Unit) {
                         }
                     }
                     Button(
-                        onClick = { EarnedItStore.runDeskAudit() },
+                        onClick = {
+                            haptics.confirm()
+                            EarnedItStore.runDeskAudit()
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = EarnedColors.Primary),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -485,6 +514,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
     var selectedDuration by remember { mutableIntStateOf(25) }
     var created by remember { mutableStateOf(false) }
     val blocks = state.scheduledBlocks.sortedBy { it.startTimeMs }
+    val haptics = rememberHaptics()
 
     MoreDetailScaffold("Calendar", "Plan protected focus blocks.", onBack) {
         item {
@@ -500,6 +530,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
+                        haptics.confirm()
                         EarnedItStore.scheduleFocusBlock("Focus block", selectedDuration)
                         created = true
                     },
@@ -528,8 +559,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
             }
         }
         item {
-            SectionCard("Reminder state", "Ready without full OS calendar integration") {
-                StatusRow(Icons.Filled.Notifications, "10 minute reminder", "Local notification planned for upcoming blocks.", EarnedColors.Focus)
+            SectionCard("Schedule status", "Saved inside EarnedIt") {
                 StatusRow(Icons.Filled.Security, "Conflict check", "No reward window overlaps detected.", EarnedColors.Focus)
             }
         }
@@ -541,6 +571,7 @@ private fun TimeBankScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
     var redeemAmount by remember { mutableIntStateOf(15) }
     var message by remember { mutableStateOf("Earned minutes can be redeemed for reward apps after focus.") }
+    val haptics = rememberHaptics()
     val earnedToday = state.timeBankTransactions
         .filter { it.minutes > 0 && isToday(it.timestampMs) }
         .sumOf { it.minutes }
@@ -569,6 +600,7 @@ private fun TimeBankScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
+                        haptics.confirm()
                         message = if (EarnedItStore.redeemTimeBank(redeemAmount, "YouTube")) {
                             "$redeemAmount minutes reserved for YouTube reward time."
                         } else {
@@ -608,6 +640,7 @@ private fun TimeBankScreen(onBack: () -> Unit) {
 private fun PrivacyLedgerScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
     val permissions = state.permissions
+    val haptics = rememberHaptics()
 
     MoreDetailScaffold("Privacy ledger", "What EarnedIt sees, stores, and never sends.", onBack) {
         item {
@@ -646,12 +679,18 @@ private fun PrivacyLedgerScreen(onBack: () -> Unit) {
         }
         item {
             SectionCard("Data controls", "Demo-safe controls") {
-                OutlinedButton(onClick = { EarnedItStore.clearSessionHistory() }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = {
+                    haptics.confirm()
+                    EarnedItStore.clearSessionHistory()
+                }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Clear local session history")
                 }
-                TextButton(onClick = { EarnedItStore.resetDemoData() }, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = {
+                    haptics.confirm()
+                    EarnedItStore.resetDemoData()
+                }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Reset demo data")
@@ -665,6 +704,7 @@ private fun PrivacyLedgerScreen(onBack: () -> Unit) {
 private fun SettingsScreen(onBack: () -> Unit) {
     val state by EarnedItStore.state.collectAsState()
     val settings = state.settings
+    val haptics = rememberHaptics()
 
     MoreDetailScaffold("Settings", "Profile, permissions, and demo controls.", onBack) {
         item {
@@ -697,13 +737,15 @@ private fun SettingsScreen(onBack: () -> Unit) {
         }
         item {
             SectionCard("Demo controls", "Fast recovery for judging") {
-                SettingSwitch("Demo mode", "Seed believable points, friends, and sessions", settings.demoModeEnabled) {
-                    EarnedItStore.updateSettings(settings.copy(demoModeEnabled = it))
+                SettingSwitch("Demo mode", "Seed lots of points, sessions, pet progress, and reward time", settings.demoModeEnabled) {
+                    EarnedItStore.setDemoMode(it)
                 }
-                Surface(onClick = { EarnedItStore.resetDemoData() }, color = Color.Transparent) {
+                Surface(onClick = {
+                    haptics.confirm()
+                    EarnedItStore.resetDemoData()
+                }, color = Color.Transparent) {
                     StatusRow(Icons.Filled.RestartAlt, "Reset demo state", "Restores sample sessions, points, and Time Bank.", EarnedColors.Primary)
                 }
-                StatusRow(Icons.Filled.Settings, "Blocked app shortcuts", "Jump to blocked and reward app setup from here.", EarnedColors.Secondary)
             }
         }
         item {
@@ -718,10 +760,10 @@ private fun SettingsScreen(onBack: () -> Unit) {
 
 @Composable
 private fun MoreFallbackScreen(title: String, onBack: () -> Unit) {
-    MoreDetailScaffold(title, "This flow is ready for the next implementation pass.", onBack) {
+    MoreDetailScaffold(title, "This tool is not available in this build.", onBack) {
         item {
-            SectionCard("Coming next", "Navigation and layout are wired.") {
-                StatusRow(Icons.Filled.Lock, "Placeholder", "Add feature-specific content here.", EarnedColors.Primary)
+            SectionCard("Unavailable", "Removed from the main More tab until it has a real flow.") {
+                StatusRow(Icons.Filled.Lock, title, "No demo-only placeholder is shown in the app navigation.", EarnedColors.Primary)
             }
         }
     }
@@ -734,6 +776,8 @@ private fun MoreDetailScaffold(
     onBack: () -> Unit,
     content: LazyListScope.() -> Unit
 ) {
+    val haptics = rememberHaptics()
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -748,7 +792,10 @@ private fun MoreDetailScaffold(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Surface(
-                    onClick = onBack,
+                    onClick = {
+                        haptics.tap()
+                        onBack()
+                    },
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.size(44.dp)
@@ -819,8 +866,13 @@ private fun StatusPill(text: String, color: Color) {
 
 @Composable
 private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val haptics = rememberHaptics()
+
     Surface(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.clickable {
+            haptics.select()
+            onClick()
+        },
         shape = RoundedCornerShape(999.dp),
         color = if (selected) EarnedColors.Primary else MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, if (selected) EarnedColors.Primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
@@ -864,8 +916,13 @@ private fun ProgressBlock(title: String, detail: String, progress: Float, color:
 
 @Composable
 private fun CareAction(label: String, cost: String, icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val haptics = rememberHaptics()
+
     Surface(
-        onClick = onClick,
+        onClick = {
+            haptics.tap()
+            onClick()
+        },
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         color = EarnedColors.Primary.copy(alpha = 0.10f)
@@ -892,6 +949,8 @@ private fun AuditResult(icon: ImageVector, label: String, state: String, detail:
 
 @Composable
 private fun SettingSwitch(title: String, body: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val haptics = rememberHaptics()
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -901,7 +960,13 @@ private fun SettingSwitch(title: String, body: String, checked: Boolean, onCheck
             Text(title, fontWeight = FontWeight.SemiBold)
             Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = {
+                haptics.select()
+                onCheckedChange(it)
+            }
+        )
     }
 }
 
@@ -923,6 +988,15 @@ private fun ProgressBar(progress: Float, color: Color) {
 }
 
 private fun List<Int>.averageOrZero(): Double = if (isEmpty()) 0.0 else average()
+
+private fun petStageLabel(stage: Int): String = when {
+    stage <= 1 -> "Hatchling"
+    stage == 2 -> "Sprout"
+    stage == 3 -> "Scout"
+    stage == 4 -> "Guardian"
+    else -> "Champion"
+}
+
 
 private fun hourLabel(timestampMs: Long): String {
     val hour = Instant.ofEpochMilli(timestampMs).atZone(ZoneId.systemDefault()).hour

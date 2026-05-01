@@ -40,6 +40,8 @@ fun EarnedBottomNav(
     currentRoute: String?,
     onTabSelected: (String) -> Unit
 ) {
+    val haptics = rememberHaptics()
+
     NavigationBar(
         modifier = Modifier.fillMaxWidth(),
         containerColor = EarnedColors.SidebarBg,
@@ -50,7 +52,10 @@ fun EarnedBottomNav(
             val selected = currentRoute == tab.route
             NavigationBarItem(
                 selected = selected,
-                onClick = { onTabSelected(tab.route) },
+                onClick = {
+                    haptics.select()
+                    onTabSelected(tab.route)
+                },
                 icon = {
                     Column(modifier = Modifier.padding(top = 2.dp)) {
                         Icon(tab.icon, contentDescription = tab.label)

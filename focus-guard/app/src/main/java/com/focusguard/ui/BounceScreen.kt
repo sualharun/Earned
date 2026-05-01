@@ -23,6 +23,7 @@ import kotlinx.coroutines.delay
 fun BounceScreen(onDismiss: () -> Unit) {
     val state by SessionManager.stateFlow.collectAsState()
     val blockedPkg = state.blockedPackageName
+    val haptics = rememberHaptics()
 
     // Auto-dismiss after 3 seconds
     LaunchedEffect(blockedPkg) {
@@ -36,6 +37,10 @@ fun BounceScreen(onDismiss: () -> Unit) {
     if (blockedPkg == null) {
         LaunchedEffect(Unit) { onDismiss() }
         return
+    }
+
+    LaunchedEffect(blockedPkg) {
+        haptics.confirm()
     }
 
     val minutes = state.remainingSeconds / 60
@@ -154,6 +159,7 @@ fun BounceScreen(onDismiss: () -> Unit) {
 
         Button(
             onClick = {
+                haptics.confirm()
                 SessionManager.clearBlockedApp()
                 onDismiss()
             },

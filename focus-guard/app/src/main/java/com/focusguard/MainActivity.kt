@@ -49,9 +49,9 @@ import com.focusguard.ui.MorePetDetailScreen
 import com.focusguard.ui.MoreScreen
 import com.focusguard.ui.OnboardingScreen
 import com.focusguard.ui.ResultsScreen
-import com.focusguard.ui.SetupScreen
 import com.focusguard.ui.SessionScreen
 import com.focusguard.ui.SocialScreen
+import com.focusguard.ui.SetupScreen
 import com.focusguard.ui.theme.FocusGuardTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -163,6 +163,8 @@ class MainActivity : ComponentActivity() {
                 if (!uiState.loaded) {
                     Box(modifier = Modifier.fillMaxSize())
                 } else {
+                    val startDest = remember { if (uiState.onboardingComplete) "home" else "onboarding" }
+
                     Scaffold(
                         containerColor = Color.Transparent,
                         bottomBar = {
@@ -179,7 +181,7 @@ class MainActivity : ComponentActivity() {
                     ) { padding ->
                         NavHost(
                             navController = navController,
-                            startDestination = if (uiState.onboardingComplete) "home" else "onboarding",
+                            startDestination = startDest,
                             modifier = Modifier.padding(padding)
                         ) {
                             composable("onboarding") {
@@ -187,6 +189,7 @@ class MainActivity : ComponentActivity() {
                                     onComplete = {
                                         navController.navigate("home") {
                                             popUpTo("onboarding") { inclusive = true }
+                                            launchSingleTop = true
                                         }
                                     }
                                 )
@@ -195,7 +198,6 @@ class MainActivity : ComponentActivity() {
                                 HomeScreen(
                                     onStartSession = { navController.navigate("setup") },
                                     onReplayOnboarding = {
-                                        EarnedItStore.replayOnboardingForPreview()
                                         navController.navigate("onboarding") {
                                             popUpTo("home") { inclusive = false }
                                             launchSingleTop = true
@@ -359,6 +361,7 @@ class MainActivity : ComponentActivity() {
                         stampFrames = stampFramesEnabled
                     )
                 }
+                Log.d("FocusGuard_ML", "RAW face=${signal.faceDetected} ear=${signal.eyeAspectRatio} eyeConf=${signal.eyeConfidence} faceConf=${signal.faceConfidence} yaw=${signal.yaw} pitch=${signal.pitch}")
                 handleSignal(signal)
             } catch (e: Exception) {
                 Log.e("FocusGuard_Camera", "Frame processing failed", e)
@@ -419,6 +422,7 @@ class MainActivity : ComponentActivity() {
                 frameCounter++
                 if (frameCounter >= 15) {
                     val focusedFrames = signalBuffer.filter { it.faceDetected }
+                    val recentFrames = signalBuffer.takeLast(15)
                     val averagedSignal = AttentionSignal(
                         faceDetected = signalBuffer.count { it.faceDetected } > signalBuffer.size / 2,
                         yaw = if (focusedFrames.isEmpty()) {
@@ -432,7 +436,7 @@ class MainActivity : ComponentActivity() {
                             focusedFrames.map { it.pitch }.average().toFloat() - (baselinePitch ?: 0f)
                         },
                         roll = 0f,
-                        eyeAspectRatio = signalBuffer.map { it.eyeAspectRatio }.average().toFloat(),
+                        eyeAspectRatio = recentFrames.map { it.eyeAspectRatio }.average().toFloat(),
                         faceConfidence = focusedFrames.map { it.faceConfidence }.averageOrZero(),
                         eyeConfidence = focusedFrames.map { it.eyeConfidence }.averageOrZero()
                     )

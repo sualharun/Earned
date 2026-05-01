@@ -223,6 +223,7 @@ object SessionManager {
         _state.update { state ->
             when (state.phase) {
                 SessionPhase.FocusActive -> {
+                    if (_isCalibrating.value) return@update state // freeze timer during calibration
                     val isFocused = _state.value.distractionReason == DistractionReason.None
                     val nextRemaining = if (isFocused) {
                         (state.remainingFocusSeconds - 1).coerceAtLeast(0)

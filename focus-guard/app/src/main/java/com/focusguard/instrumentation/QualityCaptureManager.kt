@@ -250,8 +250,10 @@ object QualityCaptureManager {
             .put("calibration_completed", calibrationCompleted)
             .put("calibration_baseline_pitch_deg", baselinePitchDeg ?: JSONObject.NULL)
             .put("calibration_baseline_yaw_deg", baselineYawDeg ?: JSONObject.NULL)
-            .put("focused_zone_yaw_deg", 20.0)
-            .put("focused_zone_pitch_deg", 15.0)
+            .put("focused_zone_yaw_min", -25.0)
+            .put("focused_zone_yaw_max", 20.0)
+            .put("focused_zone_pitch_min", -15.0)
+            .put("focused_zone_pitch_max", 18.0)
             .put("frame_capture_interval", CAPTURE_INTERVAL)
             .put("expected_capture_fps", EXPECTED_CAPTURE_FPS)
             .put("writer_queue_capacity", QUEUE_CAPACITY)
@@ -317,7 +319,8 @@ object QualityCaptureManager {
     }
 
     fun focusedZoneFor(yaw: Float, pitch: Float): Boolean {
-        return abs(yaw) <= 20f && abs(pitch) <= 15f
+        // Tuned from 6-min labeled session (88.4% agreement, 86.9% focused recall).
+        return yaw in -25.0f..20.0f && pitch in -15.0f..18.0f
     }
 
     private data class CaptureSession(
