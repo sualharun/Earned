@@ -5,6 +5,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.EaseInOutCubic
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -62,13 +63,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -81,6 +85,7 @@ import com.focusguard.state.EarnedItStore
 import com.focusguard.state.PetProfile
 import com.focusguard.state.PurchaseResult
 import com.focusguard.ui.theme.EarnedColors
+import kotlin.math.sin
 
 private enum class FocusPhase {
     Focused,
@@ -130,7 +135,7 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
         targetValue = when (phase) {
             FocusPhase.Focused -> EarnedColors.Focus
             FocusPhase.Refocus -> EarnedColors.Warning
-            FocusPhase.Distracted -> EarnedColors.Danger
+            FocusPhase.Distracted -> Color(0xFFE38A74)
         },
         animationSpec = tween(650),
         label = "phase_color"
@@ -138,8 +143,8 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
     val sceneDim by animateFloatAsState(
         targetValue = when (phase) {
             FocusPhase.Focused -> 0.04f
-            FocusPhase.Refocus -> 0.18f
-            FocusPhase.Distracted -> 0.42f
+            FocusPhase.Refocus -> 0.12f
+            FocusPhase.Distracted -> 0.22f
         },
         animationSpec = tween(800, easing = EaseInOutCubic),
         label = "scene_dim"
@@ -150,7 +155,7 @@ fun SessionScreen(onSessionEnd: (endedEarly: Boolean) -> Unit) {
         label = "amber_glow"
     )
     val redGlow by animateFloatAsState(
-        targetValue = if (phase == FocusPhase.Distracted) 0.32f else 0f,
+        targetValue = if (phase == FocusPhase.Distracted) 0.08f else 0f,
         animationSpec = tween(700, easing = EaseInOutCubic),
         label = "red_glow"
     )
@@ -289,6 +294,43 @@ private fun FocusCompanionHero(
         ),
         label = "lamp_pulse"
     )
+    val sceneDrift by infinite.animateFloat(
+        initialValue = -1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(9000, easing = EaseInOutCubic),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scene_drift"
+    )
+    val particleTime by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(5200, easing = EaseInOutCubic),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "particle_time"
+    )
+    val sceneScale by animateFloatAsState(
+        targetValue = when (phase) {
+            FocusPhase.Focused -> 1.015f
+            FocusPhase.Refocus -> 1.028f
+            FocusPhase.Distracted -> 1.026f
+        },
+        animationSpec = tween(1100, easing = EaseInOutCubic),
+        label = "scene_scale"
+    )
+    val sceneBlur by animateDpAsState(
+        targetValue = if (phase == FocusPhase.Distracted) 0.22.dp else 0.dp,
+        animationSpec = tween(850, easing = EaseInOutCubic),
+        label = "scene_blur"
+    )
+    val ringScale by animateFloatAsState(
+        targetValue = if (phase == FocusPhase.Distracted) 1.012f else 1f,
+        animationSpec = tween(700, easing = EaseInOutCubic),
+        label = "ring_scale"
+    )
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -298,14 +340,22 @@ private fun FocusCompanionHero(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Crossfade(
-                targetState = heroSceneRes(pet.species, background.id, phase),
-                animationSpec = tween(850, easing = EaseInOutCubic),
+                targetState = heroSceneRes(pet.species, pet.stage, background.id, phase),
+                animationSpec = tween(1250, easing = EaseInOutCubic),
                 label = "focus_scene_phase"
             ) { sceneRes ->
                 Image(
                     painter = painterResource(sceneRes),
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = sceneScale
+                            scaleY = sceneScale
+                            translationX = sceneDrift * 8f
+                            translationY = if (phase == FocusPhase.Distracted) sceneDrift * 5f else 0f
+                        }
+                        .blur(sceneBlur),
                     contentScale = ContentScale.Crop
                 )
             }
@@ -334,12 +384,18 @@ private fun FocusCompanionHero(
                         .fillMaxSize()
                         .background(
                             Brush.radialGradient(
-                                colors = listOf(Color.Transparent, EarnedColors.Danger.copy(alpha = redGlow)),
+                                colors = listOf(Color.Transparent, Color(0xFFE38A74).copy(alpha = redGlow)),
                                 radius = 760f
                             )
                         )
                 )
             }
+            AmbientParticles(
+                phase = phase,
+                phaseColor = phaseColor,
+                time = particleTime,
+                modifier = Modifier.fillMaxSize()
+            )
 
             TimerRing(
                 progress = progress,
@@ -348,6 +404,7 @@ private fun FocusCompanionHero(
                     .align(Alignment.TopCenter)
                     .padding(top = 20.dp)
                     .size(245.dp)
+                    .scale(ringScale)
             )
 
             Column(
@@ -431,6 +488,51 @@ private fun TimerRing(progress: Float, color: Color, modifier: Modifier = Modifi
 }
 
 @Composable
+private fun AmbientParticles(
+    phase: FocusPhase,
+    phaseColor: Color,
+    time: Float,
+    modifier: Modifier = Modifier,
+) {
+    val particles = remember {
+        listOf(
+            Offset(0.18f, 0.22f),
+            Offset(0.32f, 0.18f),
+            Offset(0.72f, 0.20f),
+            Offset(0.86f, 0.34f),
+            Offset(0.22f, 0.58f),
+            Offset(0.68f, 0.52f),
+            Offset(0.42f, 0.70f),
+            Offset(0.82f, 0.76f)
+        )
+    }
+    Canvas(modifier = modifier) {
+        particles.forEachIndexed { index, base ->
+            val shimmer = ((sin((time * 6.283f) + index * 0.9f) + 1f) / 2f)
+            val driftY = (time * 18f + index * 2.5f) % 18f
+            val radius = when (phase) {
+                FocusPhase.Focused -> 1.3f + shimmer * 1.1f
+                FocusPhase.Refocus -> 1.7f + shimmer * 1.6f
+                FocusPhase.Distracted -> 1.1f + shimmer * 0.8f
+            }
+            val alpha = when (phase) {
+                FocusPhase.Focused -> 0.18f + shimmer * 0.22f
+                FocusPhase.Refocus -> 0.24f + shimmer * 0.30f
+                FocusPhase.Distracted -> 0.10f + shimmer * 0.12f
+            }
+            drawCircle(
+                color = phaseColor.copy(alpha = alpha),
+                radius = radius.dp.toPx(),
+                center = Offset(
+                    x = base.x * size.width,
+                    y = base.y * size.height - driftY
+                )
+            )
+        }
+    }
+}
+
+@Composable
 private fun PhaseStrip(phase: FocusPhase, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -462,7 +564,7 @@ private fun PhaseStrip(phase: FocusPhase, modifier: Modifier = Modifier) {
                 icon = Icons.Filled.Close,
                 title = "Distracted",
                 subtitle = "Let's get back.",
-                color = EarnedColors.Danger,
+                color = Color(0xFFE38A74),
                 active = phase == FocusPhase.Distracted,
                 modifier = Modifier.weight(1f)
             )
@@ -546,7 +648,7 @@ private fun PhaseTestControls(
                 PhasePreviewChip(
                     label = "Distracted",
                     selected = selectedPhase == FocusPhase.Distracted,
-                    color = EarnedColors.Danger,
+                    color = Color(0xFFE38A74),
                     onClick = { onSelected(FocusPhase.Distracted) },
                     modifier = Modifier.weight(1f)
                 )
@@ -739,26 +841,86 @@ private fun SessionControls(onEndSession: () -> Unit) {
 }
 
 @DrawableRes
-private fun heroSceneRes(species: String, backgroundId: String, phase: FocusPhase): Int =
-    when (species) {
+private fun heroSceneRes(species: String, stage: Int, backgroundId: String, phase: FocusPhase): Int {
+    val focusStage = focusSceneStage(species, stage)
+    return when (species) {
         "owly" -> if (backgroundId == "balcony_night") {
             R.drawable.focus_scene_owly_balcony_night
         } else {
-            R.drawable.focus_scene_owly_cozy_desk
+            when (focusStage) {
+                1 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_owly_1_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_owly_1_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_owly_1_cozy_desk_distracted
+                }
+                5 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_owly_5_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_owly_5_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_owly_5_cozy_desk_distracted
+                }
+                else -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_owly_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_owly_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_owly_cozy_desk_distracted
+                }
+            }
         }
         "lumi" -> if (backgroundId == "balcony_night") {
             R.drawable.focus_scene_lumi_balcony_night
         } else {
-            R.drawable.focus_scene_lumi_cozy_desk
+            when (focusStage) {
+                1 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_lumi_1_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_lumi_1_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_lumi_1_cozy_desk_distracted
+                }
+                4 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_lumi_4_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_lumi_4_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_lumi_4_cozy_desk_distracted
+                }
+                else -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_lumi_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_lumi_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_lumi_cozy_desk_distracted
+                }
+            }
         }
         else -> if (backgroundId == "balcony_night") {
             R.drawable.focus_scene_kitsu_balcony_night
         } else {
-            when (phase) {
-                FocusPhase.Focused -> R.drawable.focus_scene_kitsu_cozy_desk
-                FocusPhase.Refocus -> R.drawable.focus_scene_kitsu_cozy_desk_refocus
-                FocusPhase.Distracted -> R.drawable.focus_scene_kitsu_cozy_desk_distracted
+            when (focusStage) {
+                1 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_kitsu_1_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_kitsu_1_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_kitsu_1_cozy_desk_distracted
+                }
+                5 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_kitsu_5_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_kitsu_5_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_kitsu_5_cozy_desk_distracted
+                }
+                else -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_kitsu_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_kitsu_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_kitsu_cozy_desk_distracted
+                }
             }
+        }
+    }
+}
+
+private fun focusSceneStage(species: String, stage: Int): Int =
+    when (species) {
+        "lumi" -> when {
+            stage <= 1 -> 1
+            stage >= 4 -> 4
+            else -> 3
+        }
+        else -> when {
+            stage <= 1 -> 1
+            stage >= 5 -> 5
+            else -> 3
         }
     }
 

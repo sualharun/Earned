@@ -16,27 +16,21 @@ enum class PetSpecies(val id: String, val displayName: String) {
 
 object PetAssets {
 
-    private val sprites: Map<PetSpecies, List<Int>> = mapOf(
-        PetSpecies.KITSU to listOf(
-            R.drawable.kitsu_1,
-            R.drawable.kitsu_2,
-            R.drawable.kitsu_3,
-            R.drawable.kitsu_4,
-            R.drawable.kitsu_5,
+    private val sprites: Map<PetSpecies, Map<Int, Int>> = mapOf(
+        PetSpecies.KITSU to mapOf(
+            1 to R.drawable.kitsu_1,
+            3 to R.drawable.kitsu_3,
+            5 to R.drawable.kitsu_5,
         ),
-        PetSpecies.OWLY to listOf(
-            R.drawable.owly_1,
-            R.drawable.owly_2,
-            R.drawable.owly_3,
-            R.drawable.owly_4,
-            R.drawable.owly_5,
+        PetSpecies.OWLY to mapOf(
+            1 to R.drawable.owly_1,
+            3 to R.drawable.owly_3,
+            5 to R.drawable.owly_5,
         ),
-        PetSpecies.LUMI to listOf(
-            R.drawable.lumi_1,
-            R.drawable.lumi_2,
-            R.drawable.lumi_3,
-            R.drawable.lumi_4,
-            R.drawable.lumi_5,
+        PetSpecies.LUMI to mapOf(
+            1 to R.drawable.lumi_1,
+            3 to R.drawable.lumi_3,
+            4 to R.drawable.lumi_4,
         ),
     )
 
@@ -45,11 +39,21 @@ object PetAssets {
 
     @DrawableRes
     fun spriteRes(species: PetSpecies, stage: Int): Int {
-        val stageIndex = stage.coerceIn(MIN_STAGE, MAX_STAGE) - 1
-        return sprites.getValue(species)[stageIndex]
+        return sprites.getValue(species).getValue(displayStage(species, stage))
     }
 
     @DrawableRes
     fun spriteRes(speciesId: String, stage: Int): Int =
         spriteRes(PetSpecies.fromId(speciesId), stage)
+
+    fun availableStages(species: PetSpecies): List<Int> =
+        sprites.getValue(species).keys.sorted()
+
+    fun displayStage(species: PetSpecies, stage: Int): Int {
+        val stages = availableStages(species)
+        return stages.lastOrNull { stage >= it } ?: stages.first()
+    }
+
+    fun nextDisplayStage(species: PetSpecies, unlockedStage: Int): Int =
+        availableStages(species).lastOrNull { unlockedStage >= it } ?: MIN_STAGE
 }

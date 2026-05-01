@@ -9,6 +9,8 @@ import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.focusguard.pet.PetAssets
+import com.focusguard.pet.PetSpecies
 import com.focusguard.service.AccessibilityServiceStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -212,11 +214,12 @@ object EarnedItStore {
     fun pickPet(species: String, name: String) {
         mutate { state ->
             val unlockedStage = (state.lifetimeFocusMinutes / 120 + 1).coerceIn(1, 5)
+            val displayStage = PetAssets.nextDisplayStage(PetSpecies.fromId(species), unlockedStage)
             state.copy(
                 pet = state.pet.copy(
                     species = species,
                     name = name.ifBlank { species.replaceFirstChar { c -> c.uppercase() } },
-                    stage = unlockedStage,
+                    stage = displayStage,
                     fullness = 84,
                     mood = "Happy"
                 ),
@@ -228,11 +231,12 @@ object EarnedItStore {
     fun pickPetVersion(species: String, name: String, stage: Int) {
         mutate { state ->
             val unlockedStage = (state.lifetimeFocusMinutes / 120 + 1).coerceIn(1, 5)
+            val displayStage = PetAssets.displayStage(PetSpecies.fromId(species), stage.coerceIn(1, unlockedStage))
             state.copy(
                 pet = state.pet.copy(
                     species = species,
                     name = name.ifBlank { species.replaceFirstChar { c -> c.uppercase() } },
-                    stage = stage.coerceIn(1, unlockedStage),
+                    stage = displayStage,
                     fullness = 84,
                     mood = "Happy"
                 ),
@@ -341,12 +345,13 @@ object EarnedItStore {
                 timestampMs = now
             )
             val nextStage = ((state.lifetimeFocusMinutes + durationMinutes) / 120 + 1).coerceIn(1, 5)
+            val displayStage = PetAssets.nextDisplayStage(PetSpecies.fromId(state.pet.species), nextStage)
             val updated = state.copy(
                 points = state.points + points,
                 allSessions = (listOf(session) + state.allSessions).take(250),
                 timeBankTransactions = (if (bankMinutes > 0) listOf(transaction) else emptyList()) + state.timeBankTransactions,
                 pet = state.pet.copy(
-                    stage = nextStage,
+                    stage = displayStage,
                     fullness = (state.pet.fullness + if (success) 8 else -6).coerceIn(0, 100),
                     mood = when {
                         success && score >= 90 -> "Energized"
