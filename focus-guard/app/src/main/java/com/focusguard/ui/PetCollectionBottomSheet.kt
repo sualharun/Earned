@@ -74,9 +74,17 @@ fun PetCollectionBottomSheet(
         mutableStateOf(PetSpecies.fromId(currentPet.species))
     }
     var selectedStage by remember(currentPet.species, currentPet.stage, lifetimeFocusMinutes) {
-        mutableIntStateOf(currentPet.stage.coerceIn(PetAssets.MIN_STAGE, unlockedStage))
+        mutableIntStateOf(
+            PetAssets.displayStage(
+                PetSpecies.fromId(currentPet.species),
+                currentPet.stage.coerceIn(PetAssets.MIN_STAGE, unlockedStage)
+            )
+        )
     }
-    val activeSelectedStage = selectedStage.coerceIn(PetAssets.MIN_STAGE, unlockedStage)
+    val activeSelectedStage = PetAssets.displayStage(
+        selectedSpecies,
+        selectedStage.coerceIn(PetAssets.MIN_STAGE, unlockedStage)
+    )
 
     val selectedUnlocked = isSpeciesUnlocked(selectedSpecies, ownedSpecies)
     val selectedUnlockCost = speciesUnlockCost(selectedSpecies)
@@ -128,7 +136,7 @@ fun PetCollectionBottomSheet(
                             tone = speciesTone(species),
                             onClick = {
                                 selectedSpecies = species
-                                selectedStage = selectedStage.coerceIn(PetAssets.MIN_STAGE, unlockedStage)
+                                selectedStage = PetAssets.displayStage(species, selectedStage.coerceIn(PetAssets.MIN_STAGE, unlockedStage))
                             },
                             modifier = Modifier.weight(1f)
                         )
@@ -156,7 +164,7 @@ fun PetCollectionBottomSheet(
                                 expanded = species == selectedSpecies,
                                 onClick = {
                                     selectedSpecies = species
-                                    selectedStage = selectedStage.coerceIn(PetAssets.MIN_STAGE, unlockedStage)
+                                    selectedStage = PetAssets.displayStage(species, selectedStage.coerceIn(PetAssets.MIN_STAGE, unlockedStage))
                                 },
                                 onStageClick = { stage ->
                                     selectedSpecies = species
@@ -200,8 +208,9 @@ fun PetCollectionBottomSheet(
                             !selectedUnlocked && bankedMinutes < selectedUnlockCost ->
                                 "Need ${selectedUnlockCost - bankedMinutes} more min"
                             !selectedUnlocked -> "Unlock ${selectedSpecies.displayName} · ${selectedUnlockCost} min"
-                            selectedSpecies.id == currentPet.species && activeSelectedStage == currentPet.stage -> "Current Pet"
-                            selectedSpecies.id == currentPet.species -> "Equip ${petStageLabel(activeSelectedStage)}"
+                            selectedSpecies.id == currentPet.species &&
+                                activeSelectedStage == PetAssets.displayStage(selectedSpecies, currentPet.stage) -> "Current Pet"
+                            selectedSpecies.id == currentPet.species -> "Equip Stage $activeSelectedStage"
                             else -> "Select ${selectedSpecies.displayName}"
                         },
                         fontSize = 16.sp,
@@ -344,9 +353,9 @@ private fun SpeciesStageRow(
     val unlockedStage = unlockedStageFor(lifetimeFocusMinutes)
     val speciesUnlocked = isSpeciesUnlocked(species, ownedSpecies)
     val activeStage = selectedStage ?: if (species.id == currentPet.species) {
-        currentPet.stage.coerceIn(PetAssets.MIN_STAGE, unlockedStage)
+        PetAssets.displayStage(species, currentPet.stage.coerceIn(PetAssets.MIN_STAGE, unlockedStage))
     } else {
-        unlockedStage
+        PetAssets.nextDisplayStage(species, unlockedStage)
     }
     val progress = if (species.id == currentPet.species) {
         currentPet.fullness.coerceIn(0, 100)
@@ -371,7 +380,7 @@ private fun SpeciesStageRow(
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                if (speciesUnlocked) petStageLabel(activeStage) else "Locked",
+                if (speciesUnlocked) "Stage $activeStage" else "Locked",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (speciesUnlocked) tone else MaterialTheme.colorScheme.onSurfaceVariant
@@ -390,7 +399,7 @@ private fun SpeciesStageRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            (PetAssets.MIN_STAGE..PetAssets.MAX_STAGE).forEach { stage ->
+            PetAssets.availableStages(species).forEach { stage ->
                 val stageUnlocked = speciesUnlocked && stage <= unlockedStage
                 StageTile(
                     species = species,
@@ -426,7 +435,7 @@ private fun SpeciesStageRow(
             Spacer(Modifier.height(6.dp))
             Text(
                 if (speciesUnlocked) {
-                    "$lifetimeFocusMinutes lifetime focus minutes · forms through ${petStageLabel(unlockedStage)} unlocked"
+                    "$lifetimeFocusMinutes lifetime focus minutes · stage ${PetAssets.nextDisplayStage(species, unlockedStage)} unlocked"
                 } else {
                     "${speciesUnlockCost(species)} banked minutes to unlock · $bankedMinutes available"
                 },
@@ -464,7 +473,7 @@ private fun StageTile(
                 Box(contentAlignment = Alignment.Center) {
                     Image(
                         painter = painterResource(PetAssets.spriteRes(species, stage)),
-                        contentDescription = "${species.displayName} ${petStageLabel(stage)}",
+                        contentDescription = "${species.displayName} stage $stage",
                         modifier = Modifier
                             .padding(6.dp)
                             .size(58.dp)
@@ -498,7 +507,7 @@ private fun StageTile(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            petStageShortLabel(stage),
+                            stage.toString(),
                             color = Color.White,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
@@ -513,7 +522,7 @@ private fun StageTile(
 
         if (!selected) {
             Text(
-                petStageShortLabel(stage),
+                stage.toString(),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (unlocked) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
@@ -543,23 +552,8 @@ private fun ProgressTrack(
     )
 }
 
-private fun unlockedStageFor(lifetimeFocusMinutes: Int): Int = when {
-    lifetimeFocusMinutes >= 240 -> 3
-    lifetimeFocusMinutes >= 60 -> 2
-    else -> 1
-}.coerceIn(PetAssets.MIN_STAGE, PetAssets.MAX_STAGE)
-
-private fun petStageLabel(stage: Int): String = when (stage.coerceIn(PetAssets.MIN_STAGE, PetAssets.MAX_STAGE)) {
-    1 -> "Egg"
-    2 -> "Kid"
-    else -> "Adult"
-}
-
-private fun petStageShortLabel(stage: Int): String = when (stage.coerceIn(PetAssets.MIN_STAGE, PetAssets.MAX_STAGE)) {
-    1 -> "E"
-    2 -> "K"
-    else -> "A"
-}
+private fun unlockedStageFor(lifetimeFocusMinutes: Int): Int =
+    (lifetimeFocusMinutes / 120 + 1).coerceIn(PetAssets.MIN_STAGE, PetAssets.MAX_STAGE)
 
 private fun speciesUnlockCost(species: PetSpecies): Int =
     when (species) {

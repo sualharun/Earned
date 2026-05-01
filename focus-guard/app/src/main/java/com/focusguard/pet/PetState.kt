@@ -17,16 +17,17 @@ data class EvolutionCutsceneData(
 
 object EvolutionThresholds {
 
-    fun stageForMinutes(totalMinutes: Int): Int = when {
-        totalMinutes >= 240 -> 3
-        totalMinutes >= 60 -> 2
-        else -> 1
-    }.coerceIn(PetAssets.MIN_STAGE, PetAssets.MAX_STAGE)
+    const val MINUTES_PER_STAGE = 120
+
+    fun stageForMinutes(totalMinutes: Int): Int =
+        (totalMinutes / MINUTES_PER_STAGE + 1).coerceIn(PetAssets.MIN_STAGE, PetAssets.MAX_STAGE)
 
     val STAGE_NAMES: Map<Int, String> = mapOf(
-        1 to "Egg",
-        2 to "Kid",
-        3 to "Adult",
+        1 to "Hatchling",
+        2 to "Sprout",
+        3 to "Scout",
+        4 to "Guardian",
+        5 to "Champion",
     )
 
     fun stageName(stage: Int): String =

@@ -298,7 +298,7 @@ private fun FocusCompanionHero(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Crossfade(
-                targetState = heroSceneRes(pet.species, background.id, phase),
+                targetState = heroSceneRes(pet.species, pet.stage, background.id, phase),
                 animationSpec = tween(850, easing = EaseInOutCubic),
                 label = "focus_scene_phase"
             ) { sceneRes ->
@@ -739,26 +739,86 @@ private fun SessionControls(onEndSession: () -> Unit) {
 }
 
 @DrawableRes
-private fun heroSceneRes(species: String, backgroundId: String, phase: FocusPhase): Int =
-    when (species) {
+private fun heroSceneRes(species: String, stage: Int, backgroundId: String, phase: FocusPhase): Int {
+    val focusStage = focusSceneStage(species, stage)
+    return when (species) {
         "owly" -> if (backgroundId == "balcony_night") {
             R.drawable.focus_scene_owly_balcony_night
         } else {
-            R.drawable.focus_scene_owly_cozy_desk
+            when (focusStage) {
+                1 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_owly_1_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_owly_1_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_owly_1_cozy_desk_distracted
+                }
+                5 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_owly_5_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_owly_5_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_owly_5_cozy_desk_distracted
+                }
+                else -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_owly_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_owly_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_owly_cozy_desk_distracted
+                }
+            }
         }
         "lumi" -> if (backgroundId == "balcony_night") {
             R.drawable.focus_scene_lumi_balcony_night
         } else {
-            R.drawable.focus_scene_lumi_cozy_desk
+            when (focusStage) {
+                1 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_lumi_1_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_lumi_1_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_lumi_1_cozy_desk_distracted
+                }
+                4 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_lumi_4_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_lumi_4_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_lumi_4_cozy_desk_distracted
+                }
+                else -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_lumi_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_lumi_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_lumi_cozy_desk_distracted
+                }
+            }
         }
         else -> if (backgroundId == "balcony_night") {
             R.drawable.focus_scene_kitsu_balcony_night
         } else {
-            when (phase) {
-                FocusPhase.Focused -> R.drawable.focus_scene_kitsu_cozy_desk
-                FocusPhase.Refocus -> R.drawable.focus_scene_kitsu_cozy_desk_refocus
-                FocusPhase.Distracted -> R.drawable.focus_scene_kitsu_cozy_desk_distracted
+            when (focusStage) {
+                1 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_kitsu_1_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_kitsu_1_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_kitsu_1_cozy_desk_distracted
+                }
+                5 -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_kitsu_5_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_kitsu_5_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_kitsu_5_cozy_desk_distracted
+                }
+                else -> when (phase) {
+                    FocusPhase.Focused -> R.drawable.focus_scene_kitsu_cozy_desk
+                    FocusPhase.Refocus -> R.drawable.focus_scene_kitsu_cozy_desk_refocus
+                    FocusPhase.Distracted -> R.drawable.focus_scene_kitsu_cozy_desk_distracted
+                }
             }
+        }
+    }
+}
+
+private fun focusSceneStage(species: String, stage: Int): Int =
+    when (species) {
+        "lumi" -> when {
+            stage <= 1 -> 1
+            stage >= 4 -> 4
+            else -> 3
+        }
+        else -> when {
+            stage <= 1 -> 1
+            stage >= 5 -> 5
+            else -> 3
         }
     }
 

@@ -990,14 +990,18 @@ private fun ProgressBar(progress: Float, color: Color) {
 private fun List<Int>.averageOrZero(): Double = if (isEmpty()) 0.0 else average()
 
 private fun petStageLabel(stage: Int): String = when {
-    stage <= 1 -> "Egg"
-    stage == 2 -> "Kid"
-    else -> "Adult"
+    stage <= 1 -> "Hatchling"
+    stage == 2 -> "Sprout"
+    stage == 3 -> "Scout"
+    stage == 4 -> "Guardian"
+    else -> "Champion"
 }
 
 private fun nextPetStageMinutes(stage: Int): Int? = when {
-    stage <= 1 -> 60
+    stage <= 1 -> 120
     stage == 2 -> 240
+    stage == 3 -> 360
+    stage == 4 -> 480
     else -> null
 }
 

@@ -5,7 +5,7 @@ create table if not exists public.social_profiles (
     username text not null unique,
     display_name text not null default '',
     pet_species text not null default 'kitsu',
-    pet_stage integer not null default 1 check (pet_stage between 1 and 3),
+    pet_stage integer not null default 1 check (pet_stage between 1 and 5),
     points integer not null default 0,
     weekly_focus_minutes integer not null default 0,
     streak_days integer not null default 0,
@@ -13,6 +13,13 @@ create table if not exists public.social_profiles (
     created_at timestamptz not null default now(),
     constraint social_profiles_username_format check (username ~ '^[a-z0-9_.]{3,24}$')
 );
+
+alter table public.social_profiles
+    drop constraint if exists social_profiles_pet_stage_check;
+
+alter table public.social_profiles
+    add constraint social_profiles_pet_stage_check
+    check (pet_stage between 1 and 5);
 
 create table if not exists public.social_friend_requests (
     id uuid primary key default gen_random_uuid(),

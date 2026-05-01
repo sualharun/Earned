@@ -629,7 +629,7 @@ private fun EarnedItUiState.withFreshPetBaseline(): EarnedItUiState {
 }
 
 private fun EarnedItUiState.withNormalizedPetStage(): EarnedItUiState =
-    copy(pet = pet.copy(stage = pet.stage.coerceIn(1, 3)))
+    copy(pet = pet.copy(stage = pet.stage.coerceIn(1, 5)))
 
 private fun EarnedItUiState.withStableUserIdentity(): EarnedItUiState {
     val id = profile.id.ifBlank { UUID.randomUUID().toString() }
@@ -639,11 +639,8 @@ private fun EarnedItUiState.withStableUserIdentity(): EarnedItUiState {
 
 private fun unlockedPetStageFor(minutes: Int): Int = petStageForLifetimeFocus(minutes)
 
-private fun petStageForLifetimeFocus(minutes: Int): Int = when {
-    minutes >= 240 -> 3
-    minutes >= 60 -> 2
-    else -> 1
-}
+private fun petStageForLifetimeFocus(minutes: Int): Int =
+    (minutes / 120 + 1).coerceIn(1, 5)
 
 private fun calculateStreakDays(sessions: List<FocusSessionSummary>): Int {
     val successDays = sessions.filter { it.success }

@@ -19,31 +19,41 @@ object PetAssets {
     private val sprites: Map<PetSpecies, Map<Int, Int>> = mapOf(
         PetSpecies.KITSU to mapOf(
             1 to R.drawable.kitsu_1,
-            2 to R.drawable.kitsu_2,
-            3 to R.drawable.kitsu_5,
+            3 to R.drawable.kitsu_3,
+            5 to R.drawable.kitsu_5,
         ),
         PetSpecies.OWLY to mapOf(
             1 to R.drawable.owly_1,
-            2 to R.drawable.owly_2,
-            3 to R.drawable.owly_5,
+            3 to R.drawable.owly_3,
+            5 to R.drawable.owly_5,
         ),
         PetSpecies.LUMI to mapOf(
             1 to R.drawable.lumi_1,
-            2 to R.drawable.lumi_2,
-            3 to R.drawable.lumi_4,
+            3 to R.drawable.lumi_3,
+            4 to R.drawable.lumi_4,
         ),
     )
 
     const val MIN_STAGE = 1
-    const val MAX_STAGE = 3
+    const val MAX_STAGE = 5
 
     @DrawableRes
     fun spriteRes(species: PetSpecies, stage: Int): Int {
-        val normalizedStage = stage.coerceIn(MIN_STAGE, MAX_STAGE)
-        return sprites.getValue(species).getValue(normalizedStage)
+        return sprites.getValue(species).getValue(displayStage(species, stage))
     }
 
     @DrawableRes
     fun spriteRes(speciesId: String, stage: Int): Int =
         spriteRes(PetSpecies.fromId(speciesId), stage)
+
+    fun availableStages(species: PetSpecies): List<Int> =
+        sprites.getValue(species).keys.sorted()
+
+    fun displayStage(species: PetSpecies, stage: Int): Int {
+        val stages = availableStages(species)
+        return stages.lastOrNull { stage >= it } ?: stages.first()
+    }
+
+    fun nextDisplayStage(species: PetSpecies, unlockedStage: Int): Int =
+        availableStages(species).lastOrNull { unlockedStage >= it } ?: MIN_STAGE
 }

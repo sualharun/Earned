@@ -1013,9 +1013,11 @@ private data class SocialFriend(
 private data class MoreItem(val label: String, val hint: String, val icon: ImageVector)
 
 private fun petStageLabel(stage: Int): String = when {
-    stage <= 1 -> "Egg"
-    stage == 2 -> "Kid"
-    else -> "Adult"
+    stage <= 1 -> "Hatchling"
+    stage == 2 -> "Sprout"
+    stage == 3 -> "Scout"
+    stage == 4 -> "Guardian"
+    else -> "Champion"
 }
 
 @Composable
