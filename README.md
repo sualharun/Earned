@@ -1,5 +1,5 @@
 # FocusGuard
-
+Demo Link: https://youtube.com/shorts/b8om0cERWRE?si=qW4sHb--sjr7N6NJ
 FocusGuard is an Android study app that helps students protect focus time. The app runs on-device computer vision during a focus session, estimates whether the user is still studying, pauses the session when attention is lost, and blocks distracting apps until the user returns to FocusGuard.
 
 The project was built for the Qualcomm x Google LiteRT Hackathon and targets a Samsung Galaxy S25 Ultra with Snapdragon 8 Elite / Hexagon NPU acceleration.
